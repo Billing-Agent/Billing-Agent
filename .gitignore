@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environment Variables
+.env
+.env.*
+
+# Flutter / Mobile
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.pub-cache/
+mobile/.pub/
+mobile/build/
+mobile/android/local.properties
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/app.flx
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/ios/Flutter/flutter_assets/
+mobile/linux/flutter/generated_plugin_registrant.cc
+mobile/macos/Flutter/GeneratedPluginRegistrant.swift
+mobile/macos/Flutter/ephemeral/
+mobile/windows/flutter/ephemeral/
+
+# IDE
+.idea/
+.vscode/
+*.swp

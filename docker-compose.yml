@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/billing_agent
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - billing_network
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: billing_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d billing_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - billing_network
+
+volumes:
+  postgres_data:
+
+networks:
+  billing_network:
+    driver: bridge
