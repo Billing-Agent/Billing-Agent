@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from decimal import Decimal
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
@@ -15,7 +16,9 @@ async def seed_database():
             return
 
         # Create Users
-        user1 = User(name="Alice Fake", email="alice@example.com", phone="+94771111111")
+        # Using a deterministic UUID for user1 as the development user identity
+        dev_user_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+        user1 = User(id=dev_user_id, name="Alice Fake", email="alice@example.com", phone="+94771111111")
         user2 = User(name="Bob Test", email="bob@example.com", phone="+94772222222")
         user3 = User(name="Charlie Dev", email="charlie@example.com", phone="+94773333333")
         

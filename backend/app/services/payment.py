@@ -19,6 +19,9 @@ class PaymentService:
         self.bill_repo = BillRepository(db)
         self.pm_repo = PaymentMethodRepository(db)
 
+    async def get_user_payment_methods(self, user_id: uuid.UUID):
+        return await self.pm_repo.get_all_by_user(user_id)
+
     async def prepare_payment(self, req: PaymentPrepareRequest, user_id: uuid.UUID) -> PaymentPrepareResponse:
         # First check idempotency to fail fast if already exists
         existing_tx = await self.tx_repo.get_by_idempotency_key(req.idempotency_key)

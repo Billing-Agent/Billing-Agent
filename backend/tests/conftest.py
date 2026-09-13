@@ -10,10 +10,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.core.config import settings
 from app.models.base import Base
 
-# Ensure the tests use localhost if running locally
+# Ensure the tests use localhost if running locally on the host
 db_url = settings.DATABASE_URL
-if "db:5432" in db_url:
+if not os.path.exists("/.dockerenv") and "db:5432" in db_url:
     db_url = db_url.replace("db:5432", "localhost:5432")
+    settings.DATABASE_URL = db_url
 
 test_engine = create_async_engine(db_url, echo=False)
 

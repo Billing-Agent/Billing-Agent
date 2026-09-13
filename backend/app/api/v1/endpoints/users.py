@@ -14,3 +14,13 @@ async def get_user_bills(user_id: UUID, db: AsyncSession = Depends(get_db)):
     service = BillingService(db)
     bills = await service.get_user_bills(user_id)
     return [BillResponse.model_validate(bill) for bill in bills]
+
+from app.schemas.payment_method import PaymentMethodResponse
+from app.services.payment import PaymentService
+
+@router.get("/{user_id}/payment-methods", response_model=List[PaymentMethodResponse])
+async def get_user_payment_methods(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Development ONLY endpoint to get payment methods for a given user."""
+    service = PaymentService(db)
+    methods = await service.get_user_payment_methods(user_id)
+    return [PaymentMethodResponse.model_validate(pm) for pm in methods]
