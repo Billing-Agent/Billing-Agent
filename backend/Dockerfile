@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install dependencies
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --default-timeout=100 --no-cache-dir -r requirements.txt
 
 # Copy project
 COPY . .
