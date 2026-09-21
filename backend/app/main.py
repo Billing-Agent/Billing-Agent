@@ -47,12 +47,13 @@ def get_application() -> FastAPI:
     async def concurrency_conflict_exception_handler(request: Request, exc: ConcurrencyConflictError):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
-    from app.api.v1.endpoints import bills, payments, dev, users
+    from app.api.v1.endpoints import bills, payments, dev, users, auth
     application.include_router(health.router, prefix=settings.API_V1_STR, tags=["health"])
     application.include_router(bills.router, prefix=f"{settings.API_V1_STR}/bills", tags=["bills"])
     application.include_router(payments.router, prefix=f"{settings.API_V1_STR}/payments", tags=["payments"])
     application.include_router(dev.router, prefix=f"{settings.API_V1_STR}/dev", tags=["development"])
     application.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
+    application.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 
     return application
 
