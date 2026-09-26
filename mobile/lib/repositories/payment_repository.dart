@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/payment_method.dart';
 import '../models/transaction.dart';
 import '../services/api_client.dart';
-import '../core/constants/api_config.dart';
 import 'bill_repository.dart'; // To reuse apiClientProvider
 
 final paymentRepositoryProvider = Provider<PaymentRepository>((ref) {
@@ -15,8 +14,9 @@ class PaymentRepository {
 
   PaymentRepository(this._apiClient);
 
-  Future<List<PaymentMethod>> getUserPaymentMethods() async {
-    final response = await _apiClient.get('/users/${ApiConfig.devUserId}/payment-methods');
+  Future<List<PaymentMethod>> getUserPaymentMethods([String? userId]) async {
+    final path = userId != null ? '/users/$userId/payment-methods' : '/payment-methods';
+    final response = await _apiClient.get(path);
     if (response is List) {
       return response.map((data) => PaymentMethod.fromMap(data)).toList();
     }

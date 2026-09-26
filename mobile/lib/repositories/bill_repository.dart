@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/bill.dart';
 import '../services/api_client.dart';
-import '../core/constants/api_config.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();
@@ -17,9 +16,9 @@ class BillRepository {
 
   BillRepository(this._apiClient);
 
-  Future<List<Bill>> getUserBills() async {
-    // Uses the dev user id to fetch bills
-    final response = await _apiClient.get('/users/${ApiConfig.devUserId}/bills');
+  Future<List<Bill>> getUserBills([String? userId]) async {
+    final path = userId != null ? '/users/$userId/bills' : '/bills';
+    final response = await _apiClient.get(path);
     
     // Parse the list
     if (response is List) {

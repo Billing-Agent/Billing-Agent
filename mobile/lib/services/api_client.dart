@@ -7,8 +7,17 @@ import '../core/errors/app_errors.dart';
 /// Real HTTP API Client for FastAPI Integration.
 class ApiClient {
   final http.Client _client;
+  String? _token;
 
   ApiClient({http.Client? client}) : _client = client ?? http.Client();
+
+  void setToken(String token) {
+    _token = token;
+  }
+
+  void clearToken() {
+    _token = null;
+  }
 
   /// Map HTTP status codes to AppError exceptions.
   void _handleResponseError(http.Response response) {
@@ -21,6 +30,8 @@ class ApiClient {
     switch (response.statusCode) {
       case 400:
         throw ValidationError(message ?? "Please check the bill or payment details.");
+      case 401:
+        throw UnauthorizedError(message ?? "Unauthorized. Please log in again.");
       case 404:
         throw NetworkError("Bill not found."); // Map 404 cleanly
       case 409:
@@ -42,13 +53,17 @@ class ApiClient {
     }
   }
 
-  /// Headers including the dev-only x-user-id
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        // Pass dev user id to bypass missing authentication phase
-        'x-user-id': ApiConfig.devUserId,
-      };
+  /// Headers including optional Authorization Bearer token
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (_token != null && _token!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return headers;
+  }
 
   Future<dynamic> get(String path) async {
     try {

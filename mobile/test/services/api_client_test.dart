@@ -20,6 +20,33 @@ void main() {
       expect(response['data'], 'success');
     });
 
+    test('includes Authorization Bearer header when token is set', () async {
+      String? authHeader;
+      final mockClient = MockClient((request) async {
+        authHeader = request.headers['Authorization'];
+        return http.Response(jsonEncode({'status': 'ok'}), 200);
+      });
+
+      final apiClient = ApiClient(client: mockClient);
+      apiClient.setToken('test_jwt_token');
+      await apiClient.get('/test');
+
+      expect(authHeader, 'Bearer test_jwt_token');
+
+      apiClient.clearToken();
+      await apiClient.get('/test');
+      expect(authHeader, isNull);
+    });
+
+    test('throws UnauthorizedError on 401 response code', () async {
+      final mockClient = MockClient((request) async {
+        return http.Response(jsonEncode({'detail': 'Token expired'}), 401);
+      });
+
+      final apiClient = ApiClient(client: mockClient);
+      expect(() => apiClient.get('/protected'), throwsA(isA<UnauthorizedError>()));
+    });
+
     test('throws ValidationError on 400', () async {
       final mockClient = MockClient((request) async {
         return http.Response(jsonEncode({'detail': 'Bad request data'}), 400);

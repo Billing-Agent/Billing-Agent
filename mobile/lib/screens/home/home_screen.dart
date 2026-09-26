@@ -8,16 +8,16 @@ import '../../widgets/primary_button.dart';
 import '../../core/errors/app_errors.dart';
 import '../../repositories/providers.dart';
 
+import '../../providers/auth_provider.dart';
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final billsAsync = ref.watch(userBillsProvider);
-    
-    // In Phase 5, authentication is not implemented yet. 
-    // This will be replaced by authenticated identity later.
-    const userName = "Dev User";
+    final authState = ref.watch(authProvider);
+    final userName = authState.user?.name ?? "Dev User";
 
     return Scaffold(
       appBar: AppBar(
