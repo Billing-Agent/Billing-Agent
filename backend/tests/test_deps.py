@@ -119,3 +119,11 @@ async def test_get_current_user_inactive(db_session):
     
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Inactive user"
+
+@pytest.mark.asyncio
+async def test_get_current_user_missing_token(db_session):
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(token=None, db=db_session)
+    
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Not authenticated"

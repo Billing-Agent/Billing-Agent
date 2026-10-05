@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.bill import Bill
 from app.models.payment_method import PaymentMethod
 from app.models.transaction import Transaction
+from app.core.security import create_access_token
 from sqlalchemy import select
 
 import pytest_asyncio
@@ -26,10 +27,13 @@ async def async_client(db_session):
 
 @pytest.mark.asyncio
 async def test_api_payments_prepare(async_client, db_session):
-    user_a = User(name="User A", email="pay_a@test.com")
-    user_b = User(name="User B", email="pay_b@test.com")
+    user_a = User(name="User A", email="pay_a@test.com", is_active=True)
+    user_b = User(name="User B", email="pay_b@test.com", is_active=True)
     db_session.add_all([user_a, user_b])
     await db_session.flush()
+
+    token_a = create_access_token(subject=str(user_a.id))
+    headers_a = {"Authorization": f"Bearer {token_a}"}
 
     bill_a = Bill(user_id=user_a.id, biller="CEB", account_number="A1", amount_due=Decimal("100"), status="UNPAID")
     bill_paid = Bill(user_id=user_a.id, biller="CEB", account_number="A2", amount_due=Decimal("0"), status="PAID")
@@ -42,11 +46,34 @@ async def test_api_payments_prepare(async_client, db_session):
     db_session.add_all([pm_a, pm_b])
     await db_session.flush()
 
-    # 9. Payment preparation creates PENDING transaction
+    # Test missing auth
     idem_key = f"idem_{uuid4()}"
+    res_no_auth = await async_client.post(
+        "/api/v1/payments/prepare",
+        json={
+            "bill_id": str(bill_a.id),
+            "payment_method_id": str(pm_a.id),
+            "idempotency_key": idem_key
+        }
+    )
+    assert res_no_auth.status_code == 401
+
+    # Test invalid auth
+    res_invalid_auth = await async_client.post(
+        "/api/v1/payments/prepare",
+        headers={"Authorization": "Bearer invalid_token"},
+        json={
+            "bill_id": str(bill_a.id),
+            "payment_method_id": str(pm_a.id),
+            "idempotency_key": idem_key
+        }
+    )
+    assert res_invalid_auth.status_code == 401
+
+    # 9. Payment preparation creates PENDING transaction
     res_success = await async_client.post(
         "/api/v1/payments/prepare",
-        headers={"x-user-id": str(user_a.id)},
+        headers=headers_a,
         json={
             "bill_id": str(bill_a.id),
             "payment_method_id": str(pm_a.id),
@@ -60,7 +87,7 @@ async def test_api_payments_prepare(async_client, db_session):
     # 13. Duplicate idempotency key does not create duplicate transactions
     res_dup = await async_client.post(
         "/api/v1/payments/prepare",
-        headers={"x-user-id": str(user_a.id)},
+        headers=headers_a,
         json={
             "bill_id": str(bill_a.id),
             "payment_method_id": str(pm_a.id),
@@ -73,7 +100,7 @@ async def test_api_payments_prepare(async_client, db_session):
     # 10. Payment preparation rejects a bill belonging to another user
     res_wrong_bill = await async_client.post(
         "/api/v1/payments/prepare",
-        headers={"x-user-id": str(user_a.id)},
+        headers=headers_a,
         json={
             "bill_id": str(bill_b.id),
             "payment_method_id": str(pm_a.id),
@@ -85,7 +112,7 @@ async def test_api_payments_prepare(async_client, db_session):
     # 11. Payment preparation rejects a payment method belonging to another user
     res_wrong_pm = await async_client.post(
         "/api/v1/payments/prepare",
-        headers={"x-user-id": str(user_a.id)},
+        headers=headers_a,
         json={
             "bill_id": str(bill_a.id),
             "payment_method_id": str(pm_b.id),
@@ -97,7 +124,7 @@ async def test_api_payments_prepare(async_client, db_session):
     # 12. Payment preparation rejects an already PAID bill
     res_paid = await async_client.post(
         "/api/v1/payments/prepare",
-        headers={"x-user-id": str(user_a.id)},
+        headers=headers_a,
         json={
             "bill_id": str(bill_paid.id),
             "payment_method_id": str(pm_a.id),
@@ -107,8 +134,42 @@ async def test_api_payments_prepare(async_client, db_session):
     assert res_paid.status_code == 400
 
 @pytest.mark.asyncio
+async def test_api_payments_get_transaction(async_client, db_session):
+    user_a = User(name="User A", email="pay_get_a@test.com", is_active=True)
+    user_b = User(name="User B", email="pay_get_b@test.com", is_active=True)
+    db_session.add_all([user_a, user_b])
+    await db_session.flush()
+
+    token_a = create_access_token(subject=str(user_a.id))
+    token_b = create_access_token(subject=str(user_b.id))
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    bill_a = Bill(user_id=user_a.id, biller="CEB", account_number="A1", amount_due=Decimal("100"), status="UNPAID")
+    db_session.add(bill_a)
+    await db_session.flush()
+
+    pm_a = PaymentMethod(user_id=user_a.id, provider="Test", token_reference="tok", is_default=True)
+    db_session.add(pm_a)
+    await db_session.flush()
+
+    tx_a = Transaction(user_id=user_a.id, bill_id=bill_a.id, payment_method_id=pm_a.id, amount=Decimal("100"), status="PENDING", idempotency_key=f"idem_{uuid4()}")
+    db_session.add(tx_a)
+    await db_session.flush()
+
+    # 7. GET /payments/{transaction_id} succeeds for the owner
+    res_owner = await async_client.get(f"/api/v1/payments/{tx_a.id}", headers=headers_a)
+    assert res_owner.status_code == 200
+    assert res_owner.json()["id"] == str(tx_a.id)
+
+    # 8. User B cannot retrieve User A's transaction
+    res_other = await async_client.get(f"/api/v1/payments/{tx_a.id}", headers=headers_b)
+    assert res_other.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_api_payments_simulate_success(async_client, db_session):
-    user_a = User(name="User A", email="pay_sim@test.com")
+    user_a = User(name="User A", email="pay_sim@test.com", is_active=True)
     db_session.add(user_a)
     await db_session.flush()
 
@@ -154,7 +215,7 @@ async def test_api_payments_concurrency():
         
         # We need a user, bill, and PM. Let's just create them directly via a one-off session.
         async with AsyncSessionLocal() as session:
-            user_c = User(name="Concurrency User", email=f"conc_{uuid4()}@test.com")
+            user_c = User(name="Concurrency User", email=f"conc_{uuid4()}@test.com", is_active=True)
             session.add(user_c)
             await session.commit()
             
@@ -162,6 +223,9 @@ async def test_api_payments_concurrency():
             pm_c = PaymentMethod(user_id=user_c.id, provider="Test", token_reference="tok", is_default=True)
             session.add_all([bill_c, pm_c])
             await session.commit()
+
+        token_c = create_access_token(subject=str(user_c.id))
+        headers_c = {"Authorization": f"Bearer {token_c}"}
 
         # CONCURRENCY TEST 1: Duplicate Idempotency Key (prepare)
         idem_key = f"idem_conc_{uuid4()}"
@@ -173,7 +237,7 @@ async def test_api_payments_concurrency():
         
         # Fire 5 concurrent prepare requests
         reqs = [
-            ac.post("/api/v1/payments/prepare", headers={"x-user-id": str(user_c.id)}, json=req_json)
+            ac.post("/api/v1/payments/prepare", headers=headers_c, json=req_json)
             for _ in range(5)
         ]
         responses = await asyncio.gather(*reqs)
@@ -202,4 +266,3 @@ async def test_api_payments_concurrency():
             final_bill = await repo.get(bill_c.id)
             assert final_bill.status == "PAID"
             assert final_bill.amount_due == Decimal("0.00")
-

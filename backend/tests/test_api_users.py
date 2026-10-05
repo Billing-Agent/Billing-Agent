@@ -105,7 +105,7 @@ async def test_get_user_bills_missing_auth(async_client: AsyncClient, db_session
     # No Authorization header
     response = await async_client.get(f"/api/v1/users/{user1.id}/bills")
     
-    assert response.status_code in (401, 403)  # HTTPBearer with auto_error=True returns 403, but depending on FastAPI version could be 401
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

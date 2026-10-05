@@ -247,7 +247,7 @@ async def test_get_current_user_success(async_client: AsyncClient, db_session: A
 @pytest.mark.asyncio
 async def test_get_current_user_unauthorized(async_client: AsyncClient):
     res = await async_client.get("/api/v1/auth/me")
-    assert res.status_code in (401, 403)
+    assert res.status_code == 401
 
 @pytest.mark.asyncio
 async def test_get_current_user_invalid_token(async_client: AsyncClient):

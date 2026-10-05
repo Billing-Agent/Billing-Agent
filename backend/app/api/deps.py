@@ -10,12 +10,19 @@ from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user import UserRepository
 
-reusable_oauth2 = HTTPBearer()
+reusable_oauth2 = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     token: Annotated[HTTPAuthorizationCredentials, Depends(reusable_oauth2)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     try:
         payload = security.decode_access_token(token.credentials)
     except Exception:
