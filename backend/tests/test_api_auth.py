@@ -217,3 +217,60 @@ async def test_login_missing_fields(async_client: AsyncClient):
     
     res2 = await async_client.post("/api/v1/auth/login", json={"password": "Password123!"})
     assert res2.status_code == 422
+
+@pytest.mark.asyncio
+async def test_get_current_user_success(async_client: AsyncClient, db_session: AsyncSession):
+    from app.core.security import get_password_hash, create_access_token
+    email = f"test_{uuid4()}@example.com"
+    user = User(
+        name="Me Test User",
+        email=email,
+        password_hash=get_password_hash("CorrectPassword!"),
+        is_active=True
+    )
+    db_session.add(user)
+    await db_session.commit()
+    
+    token = create_access_token(subject=str(user.id))
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    res = await async_client.get("/api/v1/auth/me", headers=headers)
+    assert res.status_code == 200
+    
+    data = res.json()
+    assert data["id"] == str(user.id)
+    assert data["email"] == email
+    assert data["name"] == "Me Test User"
+    assert "password" not in data
+    assert "password_hash" not in data
+
+@pytest.mark.asyncio
+async def test_get_current_user_unauthorized(async_client: AsyncClient):
+    res = await async_client.get("/api/v1/auth/me")
+    assert res.status_code in (401, 403)
+
+@pytest.mark.asyncio
+async def test_get_current_user_invalid_token(async_client: AsyncClient):
+    headers = {"Authorization": "Bearer invalid_token"}
+    res = await async_client.get("/api/v1/auth/me", headers=headers)
+    assert res.status_code == 401
+    assert "validate credentials" in res.json()["detail"].lower()
+
+@pytest.mark.asyncio
+async def test_get_current_user_inactive(async_client: AsyncClient, db_session: AsyncSession):
+    from app.core.security import get_password_hash, create_access_token
+    user = User(
+        name="Inactive Me",
+        email=f"test_{uuid4()}@example.com",
+        password_hash=get_password_hash("CorrectPassword!"),
+        is_active=False
+    )
+    db_session.add(user)
+    await db_session.commit()
+    
+    token = create_access_token(subject=str(user.id))
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    res = await async_client.get("/api/v1/auth/me", headers=headers)
+    assert res.status_code == 401
+    assert "inactive" in res.json()["detail"].lower()

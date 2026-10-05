@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.api.deps import get_current_user
+from app.models.user import User
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
 from app.schemas.user import UserResponse
 from app.services.auth import AuthService
@@ -52,3 +54,12 @@ async def login(
         )
         
     return auth_service.create_user_token(user)
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current user information.
+    """
+    return UserResponse.model_validate(current_user)
