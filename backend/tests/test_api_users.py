@@ -49,6 +49,7 @@ async def test_get_user_payment_methods_authenticated_own(async_client: AsyncCli
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
+    assert "token_reference" not in data[0]
     assert data[0]["provider"] == "Sandbox"
 
 
