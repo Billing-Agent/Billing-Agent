@@ -4,7 +4,9 @@ import 'package:http/testing.dart';
 import 'dart:convert';
 
 import 'package:mobile/services/api_client.dart';
+import 'package:mobile/core/storage/token_storage.dart';
 import 'package:mobile/core/errors/app_errors.dart';
+import '../core/token_storage_test.dart';
 
 void main() {
   group('ApiClient', () {
@@ -20,10 +22,10 @@ void main() {
       expect(response['data'], 'success');
     });
 
-    test('includes Authorization Bearer header when token is set', () async {
-      String? authHeader;
+    test('includes Authorization Bearer header and NO x-user-id header when token is set', () async {
+      Map<String, String>? capturedHeaders;
       final mockClient = MockClient((request) async {
-        authHeader = request.headers['Authorization'];
+        capturedHeaders = request.headers;
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
@@ -31,21 +33,76 @@ void main() {
       apiClient.setToken('test_jwt_token');
       await apiClient.get('/test');
 
-      expect(authHeader, 'Bearer test_jwt_token');
+      expect(capturedHeaders?['Authorization'], 'Bearer test_jwt_token');
+      expect(capturedHeaders?.containsKey('x-user-id'), isFalse);
+      expect(capturedHeaders?.containsKey('X-User-Id'), isFalse);
 
       apiClient.clearToken();
       await apiClient.get('/test');
-      expect(authHeader, isNull);
+      expect(capturedHeaders?['Authorization'], isNull);
     });
 
-    test('throws UnauthorizedError on 401 response code', () async {
+    test('resolves token from TokenStorage automatically if in-memory token is unset', () async {
+      final mockStorage = MockFlutterSecureStorage();
+      final tokenStorage = TokenStorage(storage: mockStorage);
+      await tokenStorage.saveToken('stored_jwt_token');
+
+      String? authHeader;
+      final mockClient = MockClient((request) async {
+        authHeader = request.headers['Authorization'];
+        return http.Response(jsonEncode({'status': 'ok'}), 200);
+      });
+
+      final apiClient = ApiClient(client: mockClient, tokenStorage: tokenStorage);
+      await apiClient.get('/me/bills');
+
+      expect(authHeader, 'Bearer stored_jwt_token');
+    });
+
+    test('invokes onUnauthorized callback on 401 for protected endpoints', () async {
+      bool unauthorizedCallbackInvoked = false;
       final mockClient = MockClient((request) async {
         return http.Response(jsonEncode({'detail': 'Token expired'}), 401);
       });
 
-      final apiClient = ApiClient(client: mockClient);
-      expect(() => apiClient.get('/protected'), throwsA(isA<UnauthorizedError>()));
+      final apiClient = ApiClient(
+        client: mockClient,
+        onUnauthorized: () {
+          unauthorizedCallbackInvoked = true;
+        },
+      );
+
+      try {
+        await apiClient.get('/me/bills');
+        fail('Should have thrown UnauthorizedError');
+      } catch (e) {
+        expect(e, isA<UnauthorizedError>());
+      }
+      expect(unauthorizedCallbackInvoked, isTrue);
     });
+
+    test('does NOT invoke onUnauthorized callback on 401 for /auth/login or /auth/register', () async {
+      bool unauthorizedCallbackInvoked = false;
+      final mockClient = MockClient((request) async {
+        return http.Response(jsonEncode({'detail': 'Invalid credentials'}), 401);
+      });
+
+      final apiClient = ApiClient(
+        client: mockClient,
+        onUnauthorized: () {
+          unauthorizedCallbackInvoked = true;
+        },
+      );
+
+      try {
+        await apiClient.post('/auth/login', data: {'email': 'a@b.com', 'password': 'pw'});
+        fail('Should have thrown UnauthorizedError');
+      } catch (e) {
+        expect(e, isA<UnauthorizedError>());
+      }
+      expect(unauthorizedCallbackInvoked, isFalse);
+    });
+
 
     test('throws ValidationError on 400', () async {
       final mockClient = MockClient((request) async {

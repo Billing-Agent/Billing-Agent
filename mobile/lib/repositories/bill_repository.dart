@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/bill.dart';
 import '../services/api_client.dart';
+import '../core/storage/token_storage.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient();
+  final tokenStorage = ref.watch(tokenStorageProvider);
+  return ApiClient(tokenStorage: tokenStorage);
 });
 
 final billRepositoryProvider = Provider<BillRepository>((ref) {
@@ -16,9 +18,8 @@ class BillRepository {
 
   BillRepository(this._apiClient);
 
-  Future<List<Bill>> getUserBills([String? userId]) async {
-    final path = userId != null ? '/users/$userId/bills' : '/bills';
-    final response = await _apiClient.get(path);
+  Future<List<Bill>> getUserBills() async {
+    final response = await _apiClient.get('/me/bills');
     
     // Parse the list
     if (response is List) {

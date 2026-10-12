@@ -25,10 +25,4 @@ class ApiConfig {
       return 'http://127.0.0.1:8000/api/v1';
     }
   }
-
-  /// The hardcoded deterministic user ID for Phase 5 development.
-  /// This bypasses the need for authentication in this phase.
-  /// IMPORTANT: This is marked development-only and must be replaced 
-  /// with authenticated identity (e.g., JWT extraction) in later phases.
-  static const String devUserId = '11111111-1111-1111-1111-111111111111';
 }

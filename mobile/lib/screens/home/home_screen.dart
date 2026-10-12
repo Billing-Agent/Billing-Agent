@@ -17,7 +17,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final billsAsync = ref.watch(userBillsProvider);
     final authState = ref.watch(authProvider);
-    final userName = authState.user?.name ?? "Dev User";
+    final userName = authState.user?.name ?? "User";
 
     return Scaffold(
       appBar: AppBar(

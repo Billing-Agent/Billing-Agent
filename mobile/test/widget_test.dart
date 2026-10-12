@@ -39,7 +39,7 @@ void main() {
   FlutterSecureStorage.setMockInitialValues({});
 
   const testUser = User(
-    id: '11111111-1111-1111-1111-111111111111',
+    id: 'test-user-id',
     name: 'Dev User',
     email: 'dev@example.com',
   );
@@ -50,7 +50,6 @@ void main() {
       return http.Response(jsonEncode([
         {
           'id': '0000-0000-0000-0001',
-          'user_id': '11111111-1111-1111-1111-111111111111',
           'biller': 'CEB',
           'account_number': '123456789',
           'amount_due': '1500.00',
@@ -62,7 +61,6 @@ void main() {
         },
         {
           'id': '0000-0000-0000-0002',
-          'user_id': '11111111-1111-1111-1111-111111111111',
           'biller': 'WATER',
           'account_number': '987654321',
           'amount_due': '800.00',
@@ -74,6 +72,7 @@ void main() {
         }
       ]), 200);
     }
+
     return http.Response('Not Found', 404);
   });
 

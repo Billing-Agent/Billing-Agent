@@ -5,9 +5,7 @@ import '../repositories/auth_repository.dart';
 import '../repositories/bill_repository.dart';
 import '../services/api_client.dart';
 
-final tokenStorageProvider = Provider<TokenStorage>((ref) {
-  return TokenStorage();
-});
+export '../core/storage/token_storage.dart' show tokenStorageProvider;
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final apiClient = ref.watch(apiClientProvider);
@@ -19,8 +17,13 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final repository = ref.watch(authRepositoryProvider);
   final storage = ref.watch(tokenStorageProvider);
   final apiClient = ref.watch(apiClientProvider);
-  return AuthNotifier(repository: repository, tokenStorage: storage, apiClient: apiClient);
+  final notifier = AuthNotifier(repository: repository, tokenStorage: storage, apiClient: apiClient);
+  apiClient.onUnauthorized = () {
+    notifier.handleUnauthorized();
+  };
+  return notifier;
 });
+
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repository;
@@ -92,6 +95,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> handleUnauthorized() async {
-    await logout();
+    if (state.status == AuthStatus.authenticated) {
+      await logout();
+    }
   }
 }
