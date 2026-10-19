@@ -5,13 +5,12 @@ from typing import Optional
 
 class PaymentMethodBase(BaseModel):
     provider: str
-    token_reference: str
     card_brand: Optional[str] = None
     last_four: Optional[str] = None
     is_default: bool = False
 
 class PaymentMethodCreate(PaymentMethodBase):
-    pass
+    token_reference: str
 
 class PaymentMethodResponse(PaymentMethodBase):
     id: UUID

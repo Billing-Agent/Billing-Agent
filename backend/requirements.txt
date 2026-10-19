@@ -9,3 +9,6 @@ alembic
 asyncpg
 greenlet
 pytest-asyncio
+pwdlib[bcrypt]
+pyjwt
+email-validator

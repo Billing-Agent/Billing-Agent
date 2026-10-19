@@ -69,11 +69,15 @@ async def test_api_user_bills_isolation(async_client, db_session):
     await db_session.flush()
 
     # 7. User can retrieve their own bills
-    res_a = await async_client.get(f"/api/v1/users/{user_a.id}/bills")
+    from app.core.security import create_access_token
+    token = create_access_token(subject=user_a.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    res_a = await async_client.get(f"/api/v1/users/{user_a.id}/bills", headers=headers)
     assert res_a.status_code == 200
     assert len(res_a.json()) == 1
     assert res_a.json()[0]["id"] == str(bill_a.id)
 
     # 8. User cannot retrieve another user's bills
-    # By querying /users/{user_a.id}/bills we only get user A's bills, inherently isolated.
+    # The authenticated user's JWT identity is checked against the requested user_id, preventing access to another user's bills.
     assert res_a.json()[0]["id"] != str(bill_b.id)
+
