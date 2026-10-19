@@ -18,6 +18,11 @@ class ValidationError extends AppError {
   ValidationError([super.message = "Invalid input provided."]);
 }
 
+class UnauthorizedError extends AppError {
+  UnauthorizedError([super.message = "Unauthorized. Please log in again."]);
+}
+
 class UnknownError extends AppError {
   UnknownError([super.message = "An unexpected error occurred."]);
 }
+

@@ -3,15 +3,32 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../core/constants/api_config.dart';
 import '../core/errors/app_errors.dart';
+import '../core/storage/token_storage.dart';
 
 /// Real HTTP API Client for FastAPI Integration.
 class ApiClient {
   final http.Client _client;
+  final TokenStorage? _tokenStorage;
+  String? _token;
+  void Function()? onUnauthorized;
 
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  ApiClient({
+    http.Client? client,
+    TokenStorage? tokenStorage,
+    this.onUnauthorized,
+  })  : _client = client ?? http.Client(),
+        _tokenStorage = tokenStorage;
+
+  void setToken(String token) {
+    _token = token;
+  }
+
+  void clearToken() {
+    _token = null;
+  }
 
   /// Map HTTP status codes to AppError exceptions.
-  void _handleResponseError(http.Response response) {
+  void _handleResponseError(http.Response response, {String? path}) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return;
     }
@@ -21,6 +38,13 @@ class ApiClient {
     switch (response.statusCode) {
       case 400:
         throw ValidationError(message ?? "Please check the bill or payment details.");
+      case 401:
+        final isAuthEndpoint = path != null &&
+            (path.endsWith('/auth/login') || path.endsWith('/auth/register'));
+        if (!isAuthEndpoint) {
+          onUnauthorized?.call();
+        }
+        throw UnauthorizedError(message ?? "Unauthorized. Please log in again.");
       case 404:
         throw NetworkError("Bill not found."); // Map 404 cleanly
       case 409:
@@ -42,22 +66,32 @@ class ApiClient {
     }
   }
 
-  /// Headers including the dev-only x-user-id
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        // Pass dev user id to bypass missing authentication phase
-        'x-user-id': ApiConfig.devUserId,
-      };
+  /// Headers including Bearer token from in-memory token or persistent token storage
+  Future<Map<String, String>> _buildHeaders() async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    if ((_token == null || _token!.isEmpty) && _tokenStorage != null) {
+      _token = await _tokenStorage.getToken();
+    }
+
+    if (_token != null && _token!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return headers;
+  }
 
   Future<dynamic> get(String path) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+      final headers = await _buildHeaders();
       final response = await _client
-          .get(uri, headers: _headers)
+          .get(uri, headers: headers)
           .timeout(const Duration(seconds: 10));
           
-      _handleResponseError(response);
+      _handleResponseError(response, path: path);
       return jsonDecode(response.body);
     } on TimeoutException {
       throw NetworkError("Unable to connect. Please check your connection.");
@@ -69,11 +103,12 @@ class ApiClient {
   Future<dynamic> post(String path, {Map<String, dynamic>? data}) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+      final headers = await _buildHeaders();
       final response = await _client
-          .post(uri, headers: _headers, body: data != null ? jsonEncode(data) : null)
+          .post(uri, headers: headers, body: data != null ? jsonEncode(data) : null)
           .timeout(const Duration(seconds: 10));
 
-      _handleResponseError(response);
+      _handleResponseError(response, path: path);
       return jsonDecode(response.body);
     } on TimeoutException {
       throw NetworkError("Unable to connect. Please check your connection.");

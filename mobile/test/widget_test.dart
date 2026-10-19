@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'dart:convert';
@@ -9,15 +10,46 @@ import 'package:mobile/main.dart';
 import 'package:mobile/widgets/state_views.dart';
 import 'package:mobile/repositories/bill_repository.dart';
 import 'package:mobile/services/api_client.dart';
+import 'package:mobile/providers/auth_provider.dart';
+import 'package:mobile/repositories/auth_repository.dart';
+import 'package:mobile/core/storage/token_storage.dart';
+import 'package:mobile/models/auth_state.dart';
+import 'package:mobile/models/user.dart';
+import 'core/token_storage_test.dart';
+
+class MockAuthNotifier extends AuthNotifier {
+  MockAuthNotifier(AuthState initialState)
+      : super(
+          repository: AuthRepository(
+            apiClient: ApiClient(),
+            tokenStorage: TokenStorage(storage: MockFlutterSecureStorage()),
+          ),
+          tokenStorage: TokenStorage(storage: MockFlutterSecureStorage()),
+          apiClient: ApiClient(),
+        ) {
+    state = initialState;
+  }
+
+  @override
+  Future<void> checkAuthStatus() async {}
+}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  FlutterSecureStorage.setMockInitialValues({});
+
+  const testUser = User(
+    id: 'test-user-id',
+    name: 'Dev User',
+    email: 'dev@example.com',
+  );
+
   // Create a mock API client that returns dummy bills
   final mockClient = MockClient((request) async {
     if (request.url.path.contains('/bills')) {
       return http.Response(jsonEncode([
         {
           'id': '0000-0000-0000-0001',
-          'user_id': '11111111-1111-1111-1111-111111111111',
           'biller': 'CEB',
           'account_number': '123456789',
           'amount_due': '1500.00',
@@ -29,7 +61,6 @@ void main() {
         },
         {
           'id': '0000-0000-0000-0002',
-          'user_id': '11111111-1111-1111-1111-111111111111',
           'biller': 'WATER',
           'account_number': '987654321',
           'amount_due': '800.00',
@@ -41,6 +72,7 @@ void main() {
         }
       ]), 200);
     }
+
     return http.Response('Not Found', 404);
   });
 
@@ -51,6 +83,7 @@ void main() {
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(mockApiClient),
+          authProvider.overrideWith((ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
         ],
         child: const BillingAgentApp(),
       ),
@@ -71,6 +104,7 @@ void main() {
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(mockApiClient),
+          authProvider.overrideWith((ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
         ],
         child: const BillingAgentApp(),
       ),

@@ -21,14 +21,21 @@ class Transaction {
   });
 
   factory Transaction.fromMap(Map<String, dynamic> map) {
+    DateTime parseDate(dynamic dateVal) {
+      if (dateVal is String) {
+        return DateTime.tryParse(dateVal) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
     return Transaction(
-      id: map['id'] as String,
+      id: (map['id'] ?? map['transaction_id'] ?? '').toString(),
       biller: map['biller'] as String? ?? 'Unknown',
-      amount: map['amount'] as String,
-      currency: map['currency'] as String,
-      status: map['status'] as String,
-      createdAt: DateTime.parse(map['created_at'] as String),
-      providerReference: map['provider_reference'] as String?,
+      amount: map['amount']?.toString() ?? '0.00',
+      currency: map['currency'] as String? ?? 'LKR',
+      status: map['status'] as String? ?? 'PENDING',
+      createdAt: parseDate(map['created_at']),
+      providerReference: (map['provider_reference'] ?? map['providerReference']) as String?,
     );
   }
 }
