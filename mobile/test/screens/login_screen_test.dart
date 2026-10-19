@@ -55,18 +55,26 @@ void main() {
     final tokenStorage = TokenStorage(storage: mockStorage);
     
     final mockClient = MockClient((request) async {
-      return http.Response(
-        jsonEncode({
-          'access_token': 'test_token',
-          'token_type': 'bearer',
-          'user': {
+      if (request.url.path.endsWith('/auth/login')) {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'test_token',
+            'token_type': 'bearer',
+          }),
+          200,
+        );
+      }
+      if (request.url.path.endsWith('/auth/me')) {
+        return http.Response(
+          jsonEncode({
             'id': 'u-1',
             'name': 'Widget Test User',
             'email': 'widget@example.com',
-          }
-        }),
-        200,
-      );
+          }),
+          200,
+        );
+      }
+      return http.Response('Not Found', 404);
     });
     
     final apiClient = ApiClient(client: mockClient);

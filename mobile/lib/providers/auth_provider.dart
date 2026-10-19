@@ -4,6 +4,7 @@ import '../models/auth_state.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/bill_repository.dart';
 import '../services/api_client.dart';
+import '../core/errors/app_errors.dart';
 
 export '../core/storage/token_storage.dart' show tokenStorageProvider;
 
@@ -65,8 +66,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState.loading();
     try {
       final authResponse = await _repository.login(email, password);
-      state = AuthState.authenticated(authResponse.user);
+      final user = authResponse.user;
+      if (user == null) {
+        throw ServerError('User profile could not be loaded.');
+      }
+      state = AuthState.authenticated(user);
     } catch (e) {
+      await _tokenStorage.deleteToken();
+      _apiClient.clearToken();
       final message = e.toString();
       state = AuthState.unauthenticated(message);
       rethrow;
@@ -76,13 +83,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> register(String name, String email, String password) async {
     state = AuthState.loading();
     try {
-      final authResponse = await _repository.register(
+      await _repository.register(
         name: name,
         email: email,
         password: password,
       );
-      state = AuthState.authenticated(authResponse.user);
+      await login(email, password);
     } catch (e) {
+      await _tokenStorage.deleteToken();
+      _apiClient.clearToken();
       final message = e.toString();
       state = AuthState.unauthenticated(message);
       rethrow;

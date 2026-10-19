@@ -1,5 +1,6 @@
 import '../services/api_client.dart';
 import '../core/storage/token_storage.dart';
+import '../core/errors/app_errors.dart';
 import '../models/auth_response.dart';
 import '../models/user.dart';
 
@@ -14,21 +15,37 @@ class AuthRepository {
         _tokenStorage = tokenStorage;
 
   Future<AuthResponse> login(String email, String password) async {
-    final response = await _apiClient.post(
-      '/auth/login',
-      data: {
-        'email': email,
-        'password': password,
-      },
-    );
+    try {
+      final response = await _apiClient.post(
+        '/auth/login',
+        data: {
+          'email': email,
+          'password': password,
+        },
+      );
 
-    final authResponse = AuthResponse.fromJson(response as Map<String, dynamic>);
-    await _tokenStorage.saveToken(authResponse.accessToken);
-    _apiClient.setToken(authResponse.accessToken);
-    return authResponse;
+      final authResponse = AuthResponse.fromJson(response as Map<String, dynamic>);
+      if (authResponse.accessToken.isEmpty) {
+        throw ServerError('Received invalid access token from server.');
+      }
+
+      await _tokenStorage.saveToken(authResponse.accessToken);
+      _apiClient.setToken(authResponse.accessToken);
+
+      final user = await getCurrentUser();
+      return AuthResponse(
+        accessToken: authResponse.accessToken,
+        tokenType: authResponse.tokenType,
+        user: user,
+      );
+    } catch (e) {
+      await _tokenStorage.deleteToken();
+      _apiClient.clearToken();
+      rethrow;
+    }
   }
 
-  Future<AuthResponse> register({
+  Future<User> register({
     required String name,
     required String email,
     required String password,
@@ -42,10 +59,11 @@ class AuthRepository {
       },
     );
 
-    final authResponse = AuthResponse.fromJson(response as Map<String, dynamic>);
-    await _tokenStorage.saveToken(authResponse.accessToken);
-    _apiClient.setToken(authResponse.accessToken);
-    return authResponse;
+    final map = response as Map<String, dynamic>;
+    final userMap = (map['user'] is Map<String, dynamic>)
+        ? map['user'] as Map<String, dynamic>
+        : map;
+    return User.fromMap(userMap);
   }
 
   Future<User> getCurrentUser() async {
