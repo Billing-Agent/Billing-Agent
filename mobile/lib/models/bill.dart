@@ -8,7 +8,7 @@ class Bill {
   
   final String currency;
   final String status; // e.g., 'UNPAID', 'PAID'
-  final DateTime dueDate;
+  final DateTime? dueDate;
 
   const Bill({
     required this.id,
@@ -28,7 +28,9 @@ class Bill {
       amountDue: map['amount_due'] as String,
       currency: map['currency'] as String,
       status: map['status'] as String,
-      dueDate: DateTime.parse(map['due_date'] as String),
+      dueDate: map['due_date'] != null
+          ? DateTime.parse(map['due_date'] as String)
+          : null,
     );
   }
 }

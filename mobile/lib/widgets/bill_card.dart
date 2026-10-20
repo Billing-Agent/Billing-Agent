@@ -52,7 +52,9 @@ class BillCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       Text(
-                        '${bill.dueDate.year}-${bill.dueDate.month.toString().padLeft(2, '0')}-${bill.dueDate.day.toString().padLeft(2, '0')}',
+                        bill.dueDate != null
+                            ? '${bill.dueDate!.year}-${bill.dueDate!.month.toString().padLeft(2, '0')}-${bill.dueDate!.day.toString().padLeft(2, '0')}'
+                            : 'Not available',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],

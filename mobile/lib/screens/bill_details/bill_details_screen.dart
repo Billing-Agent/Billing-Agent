@@ -46,7 +46,13 @@ class BillDetailsScreen extends ConsumerWidget {
                         const Divider(height: AppConstants.paddingLarge),
                         _buildDetailRow(context, 'Account Number', bill.accountNumber),
                         const Divider(height: AppConstants.paddingLarge),
-                        _buildDetailRow(context, 'Due Date', '${bill.dueDate.year}-${bill.dueDate.month.toString().padLeft(2, '0')}-${bill.dueDate.day.toString().padLeft(2, '0')}'),
+                        _buildDetailRow(
+                          context,
+                          'Due Date',
+                          bill.dueDate != null
+                              ? '${bill.dueDate!.year}-${bill.dueDate!.month.toString().padLeft(2, '0')}-${bill.dueDate!.day.toString().padLeft(2, '0')}'
+                              : 'Not available',
+                        ),
                         const Divider(height: AppConstants.paddingLarge),
                         _buildDetailRow(context, 'Status', bill.status),
                         const Divider(height: AppConstants.paddingLarge),
