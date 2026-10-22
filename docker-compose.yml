@@ -12,6 +12,15 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/billing_agent
       - JWT_SECRET=${JWT_SECRET}
+      - PAYHERE_MERCHANT_ID=${PAYHERE_MERCHANT_ID}
+      - PAYHERE_SECRET=${PAYHERE_SECRET}
+      - PAYHERE_BASE_URL=${PAYHERE_BASE_URL:-https://sandbox.payhere.lk/pay/checkout}
+      - PAYHERE_NOTIFY_URL=${PAYHERE_NOTIFY_URL}
+      - PAYHERE_RETURN_URL=${PAYHERE_RETURN_URL}
+      - PAYHERE_CANCEL_URL=${PAYHERE_CANCEL_URL}
+      - PAYHERE_DEFAULT_ADDRESS=${PAYHERE_DEFAULT_ADDRESS:-No. 1 Main Street}
+      - PAYHERE_DEFAULT_CITY=${PAYHERE_DEFAULT_CITY:-Colombo}
+      - PAYHERE_DEFAULT_COUNTRY=${PAYHERE_DEFAULT_COUNTRY:-Sri Lanka}
     depends_on:
       db:
         condition: service_healthy
