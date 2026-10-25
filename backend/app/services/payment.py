@@ -1,4 +1,5 @@
 import uuid
+import logging
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,9 @@ from app.repositories.bill import BillRepository
 from app.repositories.payment_method import PaymentMethodRepository
 from app.core.exceptions import EntityNotFoundError, BusinessLogicError, ConcurrencyConflictError
 from app.schemas.transaction import PaymentPrepareRequest, PaymentPrepareResponse, TransactionResponse
+from app.schemas.payhere import PayHereInitiateResponse, PayHereCallbackPayload
+
+logger = logging.getLogger(__name__)
 
 class PaymentService:
     def __init__(self, db: AsyncSession):
@@ -24,6 +28,146 @@ class PaymentService:
 
     async def get_user_transactions(self, user_id: uuid.UUID):
         return await self.tx_repo.get_all_by_user(user_id)
+
+    async def initiate_payment(
+        self, tx_id: uuid.UUID, user_id: uuid.UUID, user
+    ) -> PayHereInitiateResponse:
+        """
+        Generate signed PayHere checkout parameters for a PENDING transaction.
+
+        Ownership: returns 404 if the transaction does not exist or belongs to
+        a different user — intentionally identical error to prevent enumeration.
+
+        State guard: returns 400 via BusinessLogicError if the transaction is
+        not PENDING (e.g. already SUCCESS, FAILED, CANCELLED).
+
+        Idempotent: makes no DB writes. Calling this multiple times for the
+        same PENDING transaction is safe and returns fresh (but equivalent)
+        checkout parameters each time.
+
+        Provider field: intentionally NOT set here. provider is set atomically
+        with the status transition in Milestone 3 callback processing, consistent
+        with the simulate_success pattern.
+        """
+        # --- Load and verify ownership (intentional 404 on both not-found and wrong-user) ---
+        tx = await self.tx_repo.get_by_user(tx_id, user_id)
+        if not tx:
+            raise EntityNotFoundError("Transaction not found or does not belong to user.")
+
+        # --- State guard ---
+        if tx.status != "PENDING":
+            raise BusinessLogicError(
+                f"Cannot initiate payment for transaction in status: {tx.status}. "
+                "Only PENDING transactions may be initiated."
+            )
+
+        # --- Load bill for a meaningful item description ---
+        bill_description: str | None = None
+        if tx.bill_id:
+            bill = await self.bill_repo.get(tx.bill_id)
+            if bill:
+                bill_description = f"{bill.biller} - Account {bill.account_number}"
+
+        # --- Delegate all PayHere param assembly and signing to PayHereService ---
+        from app.services.payhere import PayHereService
+        payhere_svc = PayHereService()
+        return payhere_svc.build_initiate_params(
+            transaction=tx,
+            user=user,
+            bill_description=bill_description,
+        )
+
+    async def process_payhere_callback(self, payload: PayHereCallbackPayload) -> dict:
+        """
+        Process the server-to-server PayHere payment callback.
+
+        1. Signature verification was already performed before DB access.
+        2. Transaction lookup with row lock (SELECT FOR UPDATE).
+           - If order_id is invalid UUID or tx is not found -> log and return 200 (anti-enumeration/anti-retry).
+           - If tx is already terminal (SUCCESS / FAILED / CANCELLED) -> return 200 (idempotent).
+        3. Secondary field validation:
+           - merchant_id, amount, currency against transaction and configuration.
+           - Raises BusinessLogicError (HTTP 400) on mismatch.
+        4. Status mapping:
+           - "2"  -> SUCCESS (tx.status="SUCCESS", tx.provider="PAYHERE", tx.provider_reference=payment_id,
+                              lock bill, bill.status="PAID", bill.amount_due=Decimal("0.00"),
+                              commit tx + bill atomically)
+           - "-2" / "-3" -> FAILED (tx.status="FAILED", tx.provider="PAYHERE", tx.provider_reference=payment_id,
+                                    bill untouched, commit)
+           - "-1" -> CANCELLED (tx.status="CANCELLED", tx.provider="PAYHERE", tx.provider_reference=payment_id,
+                                bill untouched, commit)
+           - "0"  -> PENDING (tx.status remains "PENDING", tx.provider="PAYHERE",
+                              tx.provider_reference=payment_id if supplied, bill untouched, commit)
+           - unknown -> BusinessLogicError (HTTP 400), no DB modification.
+        """
+        # Validate order_id format as UUID
+        try:
+            tx_id = uuid.UUID(payload.order_id)
+        except (ValueError, TypeError, AttributeError):
+            logger.warning("PayHere callback received with invalid order_id: %s", payload.order_id)
+            return {"status": "ignored", "detail": "Invalid order_id format"}
+
+        # Lock transaction row (SELECT FOR UPDATE)
+        tx = await self.tx_repo.get_with_lock(tx_id)
+        if not tx:
+            logger.warning("PayHere callback received for non-existent transaction: %s", tx_id)
+            return {"status": "ignored", "detail": "Transaction not found"}
+
+        # Idempotency: if already terminal, return 200 without re-applying mutations
+        if tx.status in ["SUCCESS", "FAILED", "CANCELLED"]:
+            logger.info("Transaction %s is already terminal (%s). Duplicate callback ignored.", tx.id, tx.status)
+            return {"status": "already_processed", "transaction_status": tx.status}
+
+        # Secondary callback validation (merchant_id, amount, currency)
+        from app.services.payhere import PayHereService
+        payhere_svc = PayHereService()
+        payhere_svc.validate_callback_fields(
+            merchant_id=payload.merchant_id,
+            payhere_amount=payload.payhere_amount,
+            payhere_currency=payload.payhere_currency,
+            transaction=tx,
+        )
+
+        # Status code mapping
+        mapped_status = payhere_svc.map_status_code(payload.status_code)
+        if mapped_status is None:
+            raise BusinessLogicError(f"Unsupported PayHere status code: {payload.status_code}")
+
+        if mapped_status == "SUCCESS":
+            tx.status = "SUCCESS"
+            tx.provider = "PAYHERE"
+            tx.provider_reference = payload.payment_id
+
+            if tx.bill_id:
+                bill = await self.bill_repo.get_with_lock(tx.bill_id)
+                if not bill or bill.user_id != tx.user_id:
+                    raise BusinessLogicError("Transaction has invalid associated bill.")
+                bill.status = "PAID"
+                bill.amount_due = Decimal("0.00")
+
+            await self.db.commit()
+            await self.db.refresh(tx)
+            return {"status": "success", "transaction_id": str(tx.id), "transaction_status": tx.status}
+
+        elif mapped_status in ["FAILED", "CANCELLED"]:
+            tx.status = mapped_status
+            tx.provider = "PAYHERE"
+            if payload.payment_id:
+                tx.provider_reference = payload.payment_id
+
+            await self.db.commit()
+            await self.db.refresh(tx)
+            return {"status": "success", "transaction_id": str(tx.id), "transaction_status": tx.status}
+
+        elif mapped_status == "PENDING":
+            # PENDING callback: tx remains PENDING
+            tx.provider = "PAYHERE"
+            if payload.payment_id:
+                tx.provider_reference = payload.payment_id
+
+            await self.db.commit()
+            await self.db.refresh(tx)
+            return {"status": "pending", "transaction_id": str(tx.id), "transaction_status": tx.status}
 
     async def prepare_payment(self, req: PaymentPrepareRequest, user_id: uuid.UUID) -> PaymentPrepareResponse:
         # First check idempotency to fail fast if already exists

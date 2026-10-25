@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.transaction import PaymentPrepareRequest, PaymentPrepareResponse, TransactionResponse
+from app.schemas.payhere import PayHereInitiateResponse
 from app.services.payment import PaymentService
 
 router = APIRouter()
@@ -18,6 +19,26 @@ async def prepare_payment(
     """Prepare a payment transaction idempotently."""
     service = PaymentService(db)
     return await service.prepare_payment(request, current_user.id)
+
+@router.post("/{transaction_id}/initiate", response_model=PayHereInitiateResponse)
+async def initiate_payment(
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate signed PayHere checkout parameters for a PENDING transaction.
+
+    The authenticated user must own the transaction. No user_id is accepted
+    from the request body, path, or query — identity comes exclusively from the JWT.
+
+    The returned hash is computed server-side using PAYHERE_SECRET which is
+    never included in the response.
+
+    Safe to call multiple times for the same PENDING transaction (idempotent).
+    """
+    service = PaymentService(db)
+    return await service.initiate_payment(transaction_id, current_user.id, current_user)
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
