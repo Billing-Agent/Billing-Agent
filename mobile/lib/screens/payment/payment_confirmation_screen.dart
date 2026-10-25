@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/bill.dart';
 import '../../models/payment_method.dart';
+import '../../models/transaction.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/money_utils.dart';
 import '../../core/errors/app_errors.dart';
 import '../../repositories/providers.dart';
 import '../../repositories/payment_repository.dart';
+import '../../services/payhere_checkout_service.dart';
 import '../../widgets/primary_button.dart';
 
 class PaymentConfirmationScreen extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class PaymentConfirmationScreen extends ConsumerStatefulWidget {
 
 class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationScreen> {
   late String _idempotencyKey;
+  String? _transactionId;
   bool _isLoading = false;
 
   @override
@@ -32,55 +35,278 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
   }
 
   Future<void> _confirmPayment(PaymentMethod paymentMethod) async {
-    if (widget.bill == null) return;
-    
+    if (widget.bill == null || _isLoading) return;
+
     setState(() {
       _isLoading = true;
     });
 
+    final repository = ref.read(paymentRepositoryProvider);
+    final checkoutService = ref.read(payHereCheckoutServiceProvider);
+
     try {
-      final repository = ref.read(paymentRepositoryProvider);
-      final transaction = await repository.preparePayment(
-        widget.bill!.id, 
-        paymentMethod.id, 
-        _idempotencyKey,
+      // 1. Prepare payment transaction idempotently (or reuse if already prepared)
+      if (_transactionId == null) {
+        final transaction = await repository.preparePayment(
+          widget.bill!.id,
+          paymentMethod.id,
+          _idempotencyKey,
+        );
+        _transactionId = transaction.id;
+      }
+
+      final activeTxId = _transactionId!;
+
+      // 2. Initiate PayHere checkout parameters (signed server-side)
+      final initiateResponse = await repository.initiatePayment(activeTxId);
+
+      // 3. Launch PayHere mobile sandbox checkout
+      checkoutService.startPayment(
+        initiateResponse: initiateResponse,
+        onCompleted: (paymentId) {
+          // PayHere client callback must NOT mark payment successful locally.
+          // The backend webhook is authoritative.
+          _verifyBackendTransactionStatus(activeTxId, wasDismissed: false);
+        },
+        onError: (error) {
+          _handleCheckoutError(activeTxId, error);
+        },
+        onDismissed: () {
+          // User closed checkout sheet; verify backend status
+          _verifyBackendTransactionStatus(activeTxId, wasDismissed: true);
+        },
       );
-      
-      if (!mounted) return;
-      _showSuccessDialog(transaction.id);
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
       String msg = 'An unexpected error occurred.';
+      if (e is AppError) {
+        msg = e.message;
+      } else {
+        msg = e.toString();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  void _handleCheckoutError(String transactionId, String error) {
+    if (!mounted) return;
+    // Check if the backend already recorded a financial state
+    _verifyBackendTransactionStatus(
+      transactionId,
+      wasDismissed: false,
+      fallbackErrorMessage: error.isNotEmpty ? error : 'Payment checkout was interrupted.',
+    );
+  }
+
+  Future<void> _verifyBackendTransactionStatus(
+    String transactionId, {
+    required bool wasDismissed,
+    String? fallbackErrorMessage,
+  }) async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    final repository = ref.read(paymentRepositoryProvider);
+
+    try {
+      // PayHere webhook might have slight network latency, so allow up to 2 brief
+      // checks if user completed checkout and status is still PENDING.
+      Transaction? transaction;
+      int attempts = 0;
+      const maxAttempts = 3;
+
+      while (attempts < maxAttempts) {
+        transaction = await repository.getPaymentStatus(transactionId);
+        if (transaction != null && transaction.status != 'PENDING') {
+          break;
+        }
+        attempts++;
+        if (attempts < maxAttempts && !wasDismissed) {
+          await Future.delayed(const Duration(milliseconds: 1200));
+        } else {
+          break;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (transaction == null) {
+        if (fallbackErrorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(fallbackErrorMessage)));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Unable to retrieve payment status. Please check your transaction history.')),
+          );
+        }
+        return;
+      }
+
+      final status = transaction.status.toUpperCase();
+
+      if (status == 'SUCCESS') {
+        // Refresh application state so bill is not shown unpaid & history reflects success
+        ref.invalidate(userBillsProvider);
+        ref.invalidate(userTransactionsProvider);
+        if (widget.bill != null) {
+          ref.invalidate(billDetailsProvider(widget.bill!.id));
+        }
+
+        _showPaymentResultDialog(
+          status: 'SUCCESS',
+          title: 'Payment Successful',
+          transactionId: transaction.id,
+          amount: transaction.amount,
+          currency: transaction.currency,
+        );
+      } else if (status == 'FAILED') {
+        _showPaymentResultDialog(
+          status: 'FAILED',
+          title: 'Payment Failed',
+          transactionId: transaction.id,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          canRetry: true,
+        );
+      } else if (status == 'CANCELLED') {
+        _showPaymentResultDialog(
+          status: 'CANCELLED',
+          title: 'Payment Cancelled',
+          transactionId: transaction.id,
+          amount: transaction.amount,
+          currency: transaction.currency,
+        );
+      } else {
+        // Status remains PENDING on backend
+        if (wasDismissed) {
+          _showPaymentResultDialog(
+            status: 'CANCELLED',
+            title: 'Payment Cancelled',
+            transactionId: transaction.id,
+            amount: transaction.amount,
+            currency: transaction.currency,
+          );
+        } else {
+          _showPaymentResultDialog(
+            status: 'PENDING',
+            title: 'Payment Processing',
+            message: 'Your payment is still being confirmed.',
+            transactionId: transaction.id,
+            amount: transaction.amount,
+            currency: transaction.currency,
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      // Do not convert network errors into FAILED financial status
+      String msg = 'Unable to verify payment status with server.';
       if (e is AppError) {
         msg = e.message;
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
-  void _showSuccessDialog(String transactionId) {
+  void _showPaymentResultDialog({
+    required String status,
+    required String title,
+    required String transactionId,
+    required String amount,
+    required String currency,
+    String? message,
+    bool canRetry = false,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Payment Prepared'),
-        content: Text('Transaction ID: $transactionId\n\nPhase 5: The backend has prepared the transaction in PENDING state. Actual payment processing is not implemented yet.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop(); // Close dialog
-              context.go('/bills'); // Return to bills
-            },
-            child: const Text('OK'),
+      builder: (ctx) {
+        IconData icon;
+        Color color;
+        switch (status) {
+          case 'SUCCESS':
+            icon = Icons.check_circle;
+            color = Colors.green;
+            break;
+          case 'FAILED':
+            icon = Icons.error;
+            color = Colors.red;
+            break;
+          case 'CANCELLED':
+            icon = Icons.cancel;
+            color = Colors.orange;
+            break;
+          case 'PENDING':
+          default:
+            icon = Icons.hourglass_top;
+            color = Colors.blue;
+            break;
+        }
+
+        return AlertDialog(
+          key: const Key('payment_result_dialog'),
+          title: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  key: const Key('payment_result_title'),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (message != null) ...[
+                Text(message, key: const Key('payment_result_message')),
+                const SizedBox(height: 12),
+              ],
+              Text('Amount: $currency $amount', key: const Key('payment_result_amount')),
+              const SizedBox(height: 6),
+              Text('Transaction ID: $transactionId', key: const Key('payment_result_tx_id')),
+            ],
+          ),
+          actions: [
+            if (canRetry)
+              TextButton(
+                key: const Key('payment_result_retry_button'),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  // Reset state for a fresh attempt
+                  setState(() {
+                    _transactionId = null;
+                    _idempotencyKey = const Uuid().v4();
+                  });
+                },
+                child: const Text('Retry'),
+              ),
+            TextButton(
+              key: const Key('payment_result_primary_button'),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                if (status == 'SUCCESS') {
+                  context.go('/bills');
+                }
+              },
+              child: Text(status == 'SUCCESS' ? 'View Bills' : 'OK'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -117,8 +343,8 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                     _buildDetailRow(context, 'Account Number', widget.bill!.accountNumber),
                     const Divider(height: AppConstants.paddingMedium),
                     _buildDetailRow(
-                      context, 
-                      'Total Amount', 
+                      context,
+                      'Total Amount',
                       MoneyUtils.formatAmount(widget.bill!.amountDue, currency: widget.bill!.currency),
                       isTotal: true,
                     ),
@@ -127,7 +353,7 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
               ),
             ),
             const SizedBox(height: AppConstants.paddingMedium),
-            
+
             // Payment Methods Section
             paymentMethodsAsync.when(
               data: (methods) {
@@ -160,12 +386,13 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                 ),
               ),
             ),
-            
+
             const SizedBox(height: AppConstants.paddingLarge * 2),
-            
+
             paymentMethodsAsync.maybeWhen(
               data: (methods) => methods.isNotEmpty
                   ? PrimaryButton(
+                      key: const Key('confirm_payment_button'),
                       label: 'Confirm Payment',
                       isLoading: _isLoading,
                       onPressed: _isLoading ? null : () => _confirmPayment(methods.first),

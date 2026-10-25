@@ -129,5 +129,56 @@ void main() {
       expect(tx1.id, tx2.id); // Same transaction ID returned
       expect(tx1.amount, tx2.amount);
     });
+
+    test('initiatePayment requests POST /payments/{transaction_id}/initiate with Bearer token, no body, and parses response', () async {
+      String? requestedPath;
+      String? requestedMethod;
+      String? requestBody;
+      Map<String, String>? headers;
+
+      final mockClient = MockClient((request) async {
+        requestedPath = request.url.path;
+        requestedMethod = request.method;
+        requestBody = request.body;
+        headers = request.headers;
+        return http.Response(
+          jsonEncode({
+            'merchant_id': '1211149',
+            'order_id': 'tx-init-123',
+            'items': 'CEB Bill',
+            'currency': 'LKR',
+            'amount': '1500.00',
+            'first_name': 'Dev',
+            'last_name': 'User',
+            'email': 'dev@example.com',
+            'phone': '+94771234567',
+            'address': 'Main St',
+            'city': 'Colombo',
+            'country': 'Sri Lanka',
+            'return_url': 'http://localhost/return',
+            'cancel_url': 'http://localhost/cancel',
+            'notify_url': 'http://localhost/notify',
+            'hash': 'ABC123MD5HASH',
+          }),
+          200,
+        );
+      });
+
+      final apiClient = ApiClient(client: mockClient);
+      apiClient.setToken('bearer_jwt_token_123');
+      final repo = PaymentRepository(apiClient);
+
+      final initiateResp = await repo.initiatePayment('tx-init-123');
+
+      expect(requestedMethod, 'POST');
+      expect(requestedPath, endsWith('/payments/tx-init-123/initiate'));
+      expect(headers?['Authorization'], 'Bearer bearer_jwt_token_123');
+      // No request body is sent
+      expect(requestBody, isEmpty);
+      expect(initiateResp.orderId, 'tx-init-123');
+      expect(initiateResp.merchantId, '1211149');
+      expect(initiateResp.hash, 'ABC123MD5HASH');
+      expect(initiateResp.amount, '1500.00');
+    });
   });
 }
