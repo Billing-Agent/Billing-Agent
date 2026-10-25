@@ -22,4 +22,14 @@ plugins {
     id "org.jetbrains.kotlin.android" version "1.8.22" apply false
 }
 
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+        maven { url "https://repo.repsy.io/mvn/payhere/payhere-mobilesdk-android/" }
+    }
+}
+
 include ":app"

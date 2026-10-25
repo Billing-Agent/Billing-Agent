@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/payment_method.dart';
 import '../models/transaction.dart';
+import '../models/payhere_initiate.dart';
 import '../services/api_client.dart';
 import 'bill_repository.dart'; // To reuse apiClientProvider
 
@@ -47,5 +48,10 @@ class PaymentRepository {
     
     final response = await _apiClient.post('/payments/prepare', data: payload);
     return Transaction.fromMap(response as Map<String, dynamic>);
+  }
+
+  Future<PayHereInitiateResponse> initiatePayment(String transactionId) async {
+    final response = await _apiClient.post('/payments/$transactionId/initiate');
+    return PayHereInitiateResponse.fromMap(response as Map<String, dynamic>);
   }
 }
