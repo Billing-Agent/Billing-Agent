@@ -42,4 +42,18 @@ async def get_my_transactions(
     """Get transactions for the authenticated user."""
     service = PaymentService(db)
     transactions = await service.get_user_transactions(current_user.id)
-    return [TransactionResponse.model_validate(tx) for tx in transactions]
+
+    billing_service = BillingService(db)
+    responses = []
+
+    for tx in transactions:
+        response = TransactionResponse.model_validate(tx)
+
+        if tx.bill_id:
+            bill = await billing_service.get_bill_by_id(tx.bill_id)
+            if bill:
+                response.biller = bill.biller
+
+        responses.append(response)
+
+    return responses

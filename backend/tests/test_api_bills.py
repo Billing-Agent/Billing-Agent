@@ -27,25 +27,25 @@ async def test_api_bills_lookup(async_client, db_session):
     db_session.add(user1)
     await db_session.flush()
 
-    bill_ceb = Bill(user_id=user1.id, biller="CEB", account_number="12345", amount_due=Decimal("3450.00"), status="UNPAID")
-    bill_water = Bill(user_id=user1.id, biller="WATER", account_number="50001", amount_due=Decimal("1250.00"), status="UNPAID")
-    bill_dialog = Bill(user_id=user1.id, biller="DIALOG", account_number="77881", amount_due=Decimal("1990.00"), status="UNPAID")
-    bill_slt = Bill(user_id=user1.id, biller="SLT", account_number="90001", amount_due=Decimal("4250.00"), status="UNPAID")
+    bill_ceb = Bill(user_id=user1.id, biller="CEB", account_number="TEST-CEB-987654", amount_due=Decimal("3450.00"), status="UNPAID")
+    bill_water = Bill(user_id=user1.id, biller="WATER", account_number="TEST-WATER-987654", amount_due=Decimal("1250.00"), status="UNPAID")
+    bill_dialog = Bill(user_id=user1.id, biller="DIALOG", account_number="TEST-DIALOG-987654", amount_due=Decimal("1990.00"), status="UNPAID")
+    bill_slt = Bill(user_id=user1.id, biller="SLT", account_number="TEST-SLT-987654", amount_due=Decimal("4250.00"), status="UNPAID")
     db_session.add_all([bill_ceb, bill_water, bill_dialog, bill_slt])
     await db_session.flush()
 
     # 1, 2, 3, 4: Successful lookups
-    res_ceb = await async_client.get("/api/v1/bills/CEB/12345")
+    res_ceb = await async_client.get("/api/v1/bills/CEB/TEST-CEB-987654")
     assert res_ceb.status_code == 200
     assert res_ceb.json()["amount_due"] == "3450.00"
 
-    res_water = await async_client.get("/api/v1/bills/WATER/50001")
+    res_water = await async_client.get("/api/v1/bills/WATER/TEST-WATER-987654")
     assert res_water.status_code == 200
 
-    res_dialog = await async_client.get("/api/v1/bills/DIALOG/77881")
+    res_dialog = await async_client.get("/api/v1/bills/DIALOG/TEST-DIALOG-987654")
     assert res_dialog.status_code == 200
 
-    res_slt = await async_client.get("/api/v1/bills/SLT/90001")
+    res_slt = await async_client.get("/api/v1/bills/SLT/TEST-SLT-987654")
     assert res_slt.status_code == 200
 
     # 5. Nonexistent account returns 404
@@ -53,7 +53,7 @@ async def test_api_bills_lookup(async_client, db_session):
     assert res_404.status_code == 404
 
     # 6. Bill lookup is case-insensitive for biller
-    res_case = await async_client.get("/api/v1/bills/cEb/12345")
+    res_case = await async_client.get("/api/v1/bills/cEb/TEST-CEB-987654")
     assert res_case.status_code == 200
 
 @pytest.mark.asyncio
