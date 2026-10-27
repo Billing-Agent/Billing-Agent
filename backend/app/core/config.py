@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     PAYHERE_MERCHANT_ID: str | None = None
     PAYHERE_SECRET: str | None = None
     PAYHERE_API_KEY: str | None = None
+    # PayHere Merchant Retrieval API (OAuth & Payment Search)
+    PAYHERE_API_APP_ID: str | None = None
+    PAYHERE_API_APP_SECRET: str | None = None
+    PAYHERE_MERCHANT_API_BASE_URL: str = "https://sandbox.payhere.lk/merchant/v1"
     # PayHere URLs (environment-specific)
     PAYHERE_BASE_URL: str = "https://sandbox.payhere.lk/pay/checkout"
     PAYHERE_NOTIFY_URL: str | None = None   # e.g. https://<ngrok>/api/v1/payhere/callback

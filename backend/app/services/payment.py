@@ -13,6 +13,7 @@ from app.repositories.payment_method import PaymentMethodRepository
 from app.core.exceptions import EntityNotFoundError, BusinessLogicError, ConcurrencyConflictError
 from app.schemas.transaction import PaymentPrepareRequest, PaymentPrepareResponse, TransactionResponse
 from app.schemas.payhere import PayHereInitiateResponse, PayHereCallbackPayload
+from app.services.payhere_retrieval import PayHereRetrievalClient
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,118 @@ class PaymentService:
         # It's important to refresh to return the actual saved values
         await self.db.refresh(tx)
         return TransactionResponse.model_validate(tx)
+
+    async def reconcile_pending_transaction(
+        self,
+        tx_id: uuid.UUID,
+        user_id: uuid.UUID,
+        retrieval_client: Optional[PayHereRetrievalClient] = None,
+    ) -> TransactionResponse:
+        """
+        Safely reconcile a PENDING transaction with PayHere Merchant Retrieval API.
+
+        Flow:
+        1. Lock transaction row using SELECT FOR UPDATE.
+        2. Ownership check: transaction must belong to authenticated user (404 on mismatch).
+        3. If transaction is already terminal (SUCCESS / FAILED / CANCELLED):
+           return current TransactionResponse unchanged without querying PayHere.
+        4. If transaction is not PENDING, raise BusinessLogicError.
+        5. Call PayHereRetrievalClient with order_id = str(transaction.id).
+        6. Validate retrieved fields (order_id, amount, currency) against transaction.
+           Raise BusinessLogicError on mismatch (no DB mutation).
+        7. State transitions:
+           - SUCCESS: tx.status="SUCCESS", tx.provider="PAYHERE", provider_reference set if available;
+                      if tx.bill_id, lock bill, bill.status="PAID", bill.amount_due=Decimal("0.00");
+                      atomic commit.
+           - FAILED:  tx.status="FAILED", tx.provider="PAYHERE", provider_reference set if available;
+                      bill untouched; commit.
+           - PENDING: tx.status unchanged; provider set to PAYHERE if not already;
+                      provider_reference set if returned; commit if changed.
+           - NOT_FOUND: tx remains PENDING; return unchanged (no failure, no mutation).
+        """
+        # 1. Lock transaction row using SELECT FOR UPDATE
+        tx = await self.tx_repo.get_with_lock(tx_id)
+
+        # 2. Ownership check (identical 404 to prevent enumeration)
+        if not tx or tx.user_id != user_id:
+            raise EntityNotFoundError("Transaction not found or does not belong to user.")
+
+        # 3. If transaction is already terminal, return unchanged without calling PayHere
+        if tx.status in ["SUCCESS", "FAILED", "CANCELLED"]:
+            return TransactionResponse.model_validate(tx)
+
+        # 4. Only PENDING transactions may be reconciled
+        if tx.status != "PENDING":
+            raise BusinessLogicError(
+                f"Cannot reconcile transaction in status: {tx.status}. Only PENDING transactions may be reconciled."
+            )
+
+        # 5. Call PayHereRetrievalClient using order_id = str(transaction.id)
+        client = retrieval_client or PayHereRetrievalClient()
+        result = await client.retrieve_payment(order_id=str(tx.id))
+
+        # 6. Validate retrieved payment before mutating local state
+        if result.order_id and str(result.order_id).strip() != str(tx.id):
+            raise BusinessLogicError(
+                f"PayHere retrieval order_id mismatch: expected {tx.id}, got {result.order_id}"
+            )
+        if result.amount is not None and result.amount != tx.amount:
+            raise BusinessLogicError(
+                f"PayHere retrieval amount mismatch: expected {tx.amount}, got {result.amount}"
+            )
+        if result.currency and result.currency.strip().upper() != tx.currency.strip().upper():
+            raise BusinessLogicError(
+                f"PayHere retrieval currency mismatch: expected {tx.currency}, got {result.currency}"
+            )
+
+        # 7. State transitions
+        if result.status == "SUCCESS":
+            tx.status = "SUCCESS"
+            tx.provider = "PAYHERE"
+            if result.provider_reference:
+                tx.provider_reference = result.provider_reference
+
+            if tx.bill_id:
+                bill = await self.bill_repo.get_with_lock(tx.bill_id)
+                if not bill or bill.user_id != tx.user_id:
+                    raise BusinessLogicError("Transaction has invalid associated bill.")
+                bill.status = "PAID"
+                bill.amount_due = Decimal("0.00")
+
+            await self.db.commit()
+            await self.db.refresh(tx)
+            return TransactionResponse.model_validate(tx)
+
+        elif result.status == "FAILED":
+            tx.status = "FAILED"
+            tx.provider = "PAYHERE"
+            if result.provider_reference:
+                tx.provider_reference = result.provider_reference
+
+            await self.db.commit()
+            await self.db.refresh(tx)
+            return TransactionResponse.model_validate(tx)
+
+        elif result.status == "PENDING":
+            updated = False
+            if tx.provider != "PAYHERE":
+                tx.provider = "PAYHERE"
+                updated = True
+            if result.provider_reference and tx.provider_reference != result.provider_reference:
+                tx.provider_reference = result.provider_reference
+                updated = True
+
+            if updated:
+                await self.db.commit()
+                await self.db.refresh(tx)
+            return TransactionResponse.model_validate(tx)
+
+        elif result.status == "NOT_FOUND":
+            # Leave transaction PENDING, do not mark FAILED or CANCELLED, do not mutate DB
+            return TransactionResponse.model_validate(tx)
+
+        else:
+            raise BusinessLogicError(f"Unsupported PayHere retrieval status: {result.status}")
 
     def _build_prepare_response(self, tx: Transaction) -> PaymentPrepareResponse:
         return PaymentPrepareResponse(

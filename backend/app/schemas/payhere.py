@@ -3,7 +3,9 @@ PayHere-specific Pydantic schemas.
 
 PayHereInitiateResponse  — returned to Flutter so it can launch the PayHere SDK.
 PayHereCallbackPayload   — parsed from the server-to-server form POST from PayHere.
+PayHerePaymentRetrievalResult — normalized internal model from PayHere Merchant Retrieval API.
 """
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
@@ -45,3 +47,15 @@ class PayHereCallbackPayload(BaseModel):
     payment_id: Optional[str] = None  # PayHere's own internal payment reference
 
     model_config = ConfigDict(extra="allow")  # Capture any additional fields PayHere sends
+
+
+class PayHerePaymentRetrievalResult(BaseModel):
+    """
+    Normalized result of querying PayHere's Merchant Retrieval API.
+    Used internally by PaymentService to reconcile pending transactions.
+    """
+    status: str                         # SUCCESS | PENDING | FAILED | NOT_FOUND
+    provider_reference: Optional[str] = None  # PayHere payment_id
+    amount: Optional[Decimal] = None
+    currency: Optional[str] = None
+    order_id: Optional[str] = None

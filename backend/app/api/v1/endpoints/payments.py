@@ -40,6 +40,21 @@ async def initiate_payment(
     service = PaymentService(db)
     return await service.initiate_payment(transaction_id, current_user.id, current_user)
 
+@router.post("/{transaction_id}/reconcile", response_model=TransactionResponse)
+async def reconcile_payment(
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Safely reconcile a PENDING transaction against the PayHere Merchant Retrieval API.
+
+    The authenticated user must own the transaction. No user_id is accepted
+    from the request body, path, or query — identity comes exclusively from the JWT.
+    """
+    service = PaymentService(db)
+    return await service.reconcile_pending_transaction(transaction_id, current_user.id)
+
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
     transaction_id: UUID, 
