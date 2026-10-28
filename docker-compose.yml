@@ -12,12 +12,19 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/billing_agent
       - JWT_SECRET=${JWT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - PAYHERE_MERCHANT_ID=${PAYHERE_MERCHANT_ID}
       - PAYHERE_SECRET=${PAYHERE_SECRET}
       - PAYHERE_BASE_URL=${PAYHERE_BASE_URL:-https://sandbox.payhere.lk/pay/checkout}
       - PAYHERE_NOTIFY_URL=${PAYHERE_NOTIFY_URL}
       - PAYHERE_RETURN_URL=${PAYHERE_RETURN_URL}
       - PAYHERE_CANCEL_URL=${PAYHERE_CANCEL_URL}
+
+      - PAYHERE_API_APP_ID=${PAYHERE_API_APP_ID}
+      - PAYHERE_API_APP_SECRET=${PAYHERE_API_APP_SECRET}
+      - PAYHERE_MERCHANT_API_BASE_URL=${PAYHERE_MERCHANT_API_BASE_URL:-https://sandbox.payhere.lk/merchant/v1}
+
       - PAYHERE_DEFAULT_ADDRESS=${PAYHERE_DEFAULT_ADDRESS:-No. 1 Main Street}
       - PAYHERE_DEFAULT_CITY=${PAYHERE_DEFAULT_CITY:-Colombo}
       - PAYHERE_DEFAULT_COUNTRY=${PAYHERE_DEFAULT_COUNTRY:-Sri Lanka}
@@ -39,7 +46,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d billing_agent"]
+      test: [ "CMD-SHELL", "pg_isready -U user -d billing_agent" ]
       interval: 5s
       timeout: 5s
       retries: 5

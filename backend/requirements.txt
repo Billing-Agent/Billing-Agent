@@ -12,3 +12,4 @@ pytest-asyncio
 pwdlib[bcrypt]
 pyjwt
 email-validator
+google-adk

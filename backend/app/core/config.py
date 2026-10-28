@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     # Future Config (not used yet)
     DATABASE_URL: str | None = None
     GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     PAYHERE_MERCHANT_ID: str | None = None
     PAYHERE_SECRET: str | None = None
     PAYHERE_API_KEY: str | None = None
