@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str | None = None
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    # Payment Confirmation (Phase 8C)
+    PAYMENT_CONFIRMATION_TTL_SECONDS: int = 300
 
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_ignore_empty=True, extra="ignore")
 

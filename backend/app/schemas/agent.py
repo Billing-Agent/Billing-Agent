@@ -1,8 +1,10 @@
 """
 Pydantic schemas for the read-only conversational billing agent.
 """
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentChatRequest(BaseModel):
@@ -37,3 +39,24 @@ class AgentChatResponse(BaseModel):
     intent: Optional[str] = None
     requires_confirmation: bool = False
     payment_plan: Optional[PaymentPlan] = None
+    confirmation_id: Optional[str] = None
+
+
+class PaymentConfirmRequest(BaseModel):
+    """
+    Deterministic confirmation request to execute payment preparation.
+    Accepts ONLY an opaque confirmation_id issued by the backend.
+    No user_id, amount, or bill_id accepted from client.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    confirmation_id: str = Field(..., min_length=1, description="Backend-issued confirmation token")
+
+
+class PaymentConfirmResponse(BaseModel):
+    """Result of successfully entering the payment preparation pipeline."""
+    transaction_id: UUID
+    bill_id: UUID
+    amount: Decimal
+    currency: str
+    status: str

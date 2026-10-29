@@ -141,10 +141,12 @@ class BillingAgent:
         active_plan = self.payment_plan_tools.active_plan
         requires_confirmation = False
         payment_plan = None
+        confirmation_id = None
 
         if active_plan is not None:
             requires_confirmation = True
             payment_plan = active_plan
+            confirmation_id = self.payment_plan_tools.active_confirmation_id
             intent = AgentIntent.PAY_BILL.value
 
         return AgentChatResponse(
@@ -153,4 +155,5 @@ class BillingAgent:
             intent=intent,
             requires_confirmation=requires_confirmation,
             payment_plan=payment_plan,
+            confirmation_id=confirmation_id,
         )

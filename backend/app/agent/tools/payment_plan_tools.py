@@ -17,6 +17,7 @@ from uuid import UUID
 
 from app.agent.context import BillingAgentContext
 from app.agent.tools.bill_tools import BILLER_NORMALIZATION
+from app.agent.payment_confirmation import confirmation_store
 from app.schemas.agent import PaymentPlan
 
 
@@ -28,6 +29,7 @@ class PaymentPlanTools:
     def __init__(self, context: BillingAgentContext):
         self.context = context
         self.active_plan: Optional[PaymentPlan] = None
+        self.active_confirmation_id: Optional[str] = None
         self.executed: bool = False
 
     async def plan_bill_payment(
@@ -52,6 +54,7 @@ class PaymentPlanTools:
         """
         self.executed = True
         self.active_plan = None
+        self.active_confirmation_id = None
         bills = await self.context.billing_service.get_user_bills(self.context.authenticated_user_id)
         if not bills:
             return {
@@ -145,6 +148,15 @@ class PaymentPlanTools:
         )
         self.active_plan = plan
 
+        # Issue short-lived, single-use confirmation token tied to verified backend facts
+        conf = confirmation_store.create_confirmation(
+            user_id=self.context.authenticated_user_id,
+            bill_id=target_bill.id,
+            amount=f"{target_bill.amount_due:.2f}",
+            currency=target_bill.currency,
+        )
+        self.active_confirmation_id = conf.confirmation_id
+
         return {
             "status": "plan_created",
             "bill_id": str(target_bill.id),
@@ -154,6 +166,7 @@ class PaymentPlanTools:
             "currency": target_bill.currency,
             "bill_status": target_bill.status,
             "requires_confirmation": True,
+            "confirmation_id": conf.confirmation_id,
             "message": (
                 f"I found your {target_bill.biller} bill for account {target_bill.account_number}. "
                 f"Amount due: {target_bill.currency} {target_bill.amount_due:,.2f}.\n\n"
@@ -175,6 +188,7 @@ class PaymentPlanTools:
         """
         self.executed = True
         self.active_plan = None
+        self.active_confirmation_id = None
         try:
             bill_uuid = UUID(str(bill_id).strip())
         except (ValueError, TypeError, AttributeError):
@@ -206,6 +220,15 @@ class PaymentPlanTools:
         )
         self.active_plan = plan
 
+        # Issue short-lived, single-use confirmation token tied to verified backend facts
+        conf = confirmation_store.create_confirmation(
+            user_id=self.context.authenticated_user_id,
+            bill_id=bill.id,
+            amount=f"{bill.amount_due:.2f}",
+            currency=bill.currency,
+        )
+        self.active_confirmation_id = conf.confirmation_id
+
         return {
             "status": "plan_created",
             "bill_id": str(bill.id),
@@ -215,6 +238,7 @@ class PaymentPlanTools:
             "currency": bill.currency,
             "bill_status": bill.status,
             "requires_confirmation": True,
+            "confirmation_id": conf.confirmation_id,
             "message": (
                 f"I found your {bill.biller} bill for account {bill.account_number}. "
                 f"Amount due: {bill.currency} {bill.amount_due:,.2f}.\n\n"
