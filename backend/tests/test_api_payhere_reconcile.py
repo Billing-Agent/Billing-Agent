@@ -102,10 +102,19 @@ async def create_test_data(
 
 @pytest.mark.asyncio
 async def test_client_missing_credentials():
-    client = PayHereRetrievalClient(app_id=None, app_secret=None)
-    with pytest.raises(BusinessLogicError) as exc_info:
-        await client.get_access_token()
-    assert "not configured" in str(exc_info.value)
+    with patch(
+        "app.services.payhere_retrieval.settings.PAYHERE_API_APP_ID",
+        None,
+    ), patch(
+        "app.services.payhere_retrieval.settings.PAYHERE_API_APP_SECRET",
+        None,
+    ):
+        client = PayHereRetrievalClient()
+
+        with pytest.raises(BusinessLogicError) as exc_info:
+            await client.get_access_token()
+
+        assert "not configured" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
