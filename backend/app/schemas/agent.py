@@ -16,7 +16,24 @@ class AgentToolCall(BaseModel):
     args: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PaymentPlan(BaseModel):
+    """
+    Deterministic structured payment plan proposed for confirmation.
+    Contains strictly verified data from the database bill record.
+    """
+    bill_id: str
+    biller: str
+    account_number: str
+    amount: str
+    currency: str
+    bill_status: str
+    requires_confirmation: bool = True
+
+
 class AgentChatResponse(BaseModel):
     """Response returned to the authenticated client."""
     message: str
     tool_calls: Optional[List[AgentToolCall]] = None
+    intent: Optional[str] = None
+    requires_confirmation: bool = False
+    payment_plan: Optional[PaymentPlan] = None
