@@ -21,3 +21,15 @@ class TransactionRepository(BaseRepository[Transaction]):
         )
         return result.scalars().first()
 
+    async def get_pending_by_bill_and_user(self, bill_id: UUID, user_id: UUID) -> Optional[Transaction]:
+        result = await self.db.execute(
+            select(self.model)
+            .filter(
+                self.model.bill_id == bill_id,
+                self.model.user_id == user_id,
+                self.model.status == "PENDING",
+            )
+            .order_by(self.model.created_at.desc())
+        )
+        return result.scalars().first()
+

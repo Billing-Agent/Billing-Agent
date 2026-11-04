@@ -62,12 +62,21 @@ class PaymentService:
                 "Only PENDING transactions may be initiated."
             )
 
-        # --- Load bill for a meaningful item description ---
+        # --- Load bill for item description and enforce payment safety checks ---
         bill_description: str | None = None
         if tx.bill_id:
-            bill = await self.bill_repo.get(tx.bill_id)
-            if bill:
-                bill_description = f"{bill.biller} - Account {bill.account_number}"
+            bill = await self.bill_repo.get_by_user(tx.bill_id, user_id)
+            if not bill:
+                raise EntityNotFoundError("Associated bill not found or does not belong to user.")
+            if bill.status == "PAID":
+                raise BusinessLogicError(
+                    "This bill has already been paid. This payment attempt can no longer be initiated."
+                )
+            if bill.status != "UNPAID":
+                raise BusinessLogicError(
+                    f"Cannot initiate payment for bill in status: {bill.status}"
+                )
+            bill_description = f"{bill.biller} - Account {bill.account_number}"
 
         # --- Delegate all PayHere param assembly and signing to PayHereService ---
         from app.services.payhere import PayHereService
@@ -143,8 +152,16 @@ class PaymentService:
                 bill = await self.bill_repo.get_with_lock(tx.bill_id)
                 if not bill or bill.user_id != tx.user_id:
                     raise BusinessLogicError("Transaction has invalid associated bill.")
-                bill.status = "PAID"
-                bill.amount_due = Decimal("0.00")
+                if bill.status == "PAID":
+                    logger.warning(
+                        "Duplicate payment detected for bill %s. Transaction %s received SUCCESS, "
+                        "but bill was already PAID. Preserving transaction SUCCESS without re-applying bill settlement.",
+                        bill.id,
+                        tx.id,
+                    )
+                else:
+                    bill.status = "PAID"
+                    bill.amount_due = Decimal("0.00")
 
             await self.db.commit()
             await self.db.refresh(tx)
@@ -178,10 +195,12 @@ class PaymentService:
                 raise BusinessLogicError("Idempotency key already used by another user.")
             return self._build_prepare_response(existing_tx)
 
-        # Validate Bill
-        bill = await self.bill_repo.get_by_user(req.bill_id, user_id)
-        if not bill:
+        # 1. Lock bill row & verify ownership
+        bill = await self.bill_repo.get_with_lock(req.bill_id)
+        if not bill or bill.user_id != user_id:
             raise EntityNotFoundError("Bill not found or does not belong to user.")
+
+        # 2 & 3. Verify bill is still UNPAID
         if bill.status != "UNPAID":
             raise BusinessLogicError(f"Cannot pay bill in status: {bill.status}")
 
@@ -189,6 +208,11 @@ class PaymentService:
         pm = await self.pm_repo.get_by_user(req.payment_method_id, user_id)
         if not pm:
             raise EntityNotFoundError("Payment method not found or does not belong to user.")
+
+        # 4 & 5. Check existing active PENDING transaction for this bill and user
+        existing_pending = await self.tx_repo.get_pending_by_bill_and_user(req.bill_id, user_id)
+        if existing_pending:
+            return self._build_prepare_response(existing_pending)
 
         new_tx = Transaction(
             user_id=user_id,
@@ -338,8 +362,16 @@ class PaymentService:
                 bill = await self.bill_repo.get_with_lock(tx.bill_id)
                 if not bill or bill.user_id != tx.user_id:
                     raise BusinessLogicError("Transaction has invalid associated bill.")
-                bill.status = "PAID"
-                bill.amount_due = Decimal("0.00")
+                if bill.status == "PAID":
+                    logger.warning(
+                        "Duplicate payment detected for bill %s. Transaction %s received SUCCESS, "
+                        "but bill was already PAID. Preserving transaction SUCCESS without re-applying bill settlement.",
+                        bill.id,
+                        tx.id,
+                    )
+                else:
+                    bill.status = "PAID"
+                    bill.amount_due = Decimal("0.00")
 
             await self.db.commit()
             await self.db.refresh(tx)
