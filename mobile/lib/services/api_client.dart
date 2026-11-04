@@ -49,6 +49,8 @@ class ApiClient {
         throw NetworkError("Bill not found."); // Map 404 cleanly
       case 409:
         throw ServerError("This payment request is already being processed.");
+      case 422:
+        throw ValidationError(message ?? "Invalid request parameters.");
       default:
         if (response.statusCode >= 500) {
           throw ServerError("Something went wrong. Please try again.");
@@ -60,7 +62,14 @@ class ApiClient {
   String? _extractErrorMessage(String body) {
     try {
       final json = jsonDecode(body);
-      return json['detail']?.toString();
+      final detail = json['detail'];
+      if (detail is List && detail.isNotEmpty) {
+        final first = detail.first;
+        if (first is Map && first.containsKey('msg')) {
+          return first['msg']?.toString();
+        }
+      }
+      return detail?.toString();
     } catch (_) {
       return null;
     }
@@ -89,7 +98,7 @@ class ApiClient {
       final headers = await _buildHeaders();
       final response = await _client
           .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
           
       _handleResponseError(response, path: path);
       return jsonDecode(response.body);
@@ -106,7 +115,7 @@ class ApiClient {
       final headers = await _buildHeaders();
       final response = await _client
           .post(uri, headers: headers, body: data != null ? jsonEncode(data) : null)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
 
       _handleResponseError(response, path: path);
       return jsonDecode(response.body);

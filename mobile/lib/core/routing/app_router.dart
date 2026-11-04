@@ -11,6 +11,7 @@ import '../../screens/transactions/transactions_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import '../../screens/bill_details/bill_details_screen.dart';
 import '../../screens/payment/payment_confirmation_screen.dart';
+import '../../screens/assistant/assistant_screen.dart';
 import '../../widgets/scaffold_with_nav_bar.dart';
 import '../../models/bill.dart';
 
@@ -120,6 +121,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           final bill = state.extra as Bill?;
           return PaymentConfirmationScreen(bill: bill);
         },
+      ),
+      GoRoute(
+        path: '/assistant',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AssistantScreen(),
       ),
     ],
   );

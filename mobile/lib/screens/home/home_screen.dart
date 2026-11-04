@@ -40,6 +40,8 @@ class HomeScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildGreeting(context, userName),
+              const SizedBox(height: AppConstants.paddingMedium),
+              _buildAssistantBanner(context),
               const SizedBox(height: AppConstants.paddingLarge),
               _buildQuickActions(context),
               const SizedBox(height: AppConstants.paddingLarge),
@@ -70,6 +72,68 @@ class HomeScreen extends ConsumerWidget {
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
         ),
       ],
+    );
+  }
+
+  Widget _buildAssistantBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      key: const Key('ask_billing_agent_card'),
+      onTap: () => context.push('/assistant'),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.primaryColor.withOpacity(0.08),
+              theme.primaryColor.withOpacity(0.02),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.primaryColor.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: theme.primaryColor,
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ask Billing Agent',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Pay bills or check balances using natural language',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: theme.primaryColor,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
