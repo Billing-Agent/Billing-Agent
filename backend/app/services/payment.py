@@ -65,8 +65,8 @@ class PaymentService:
         # --- Load bill for item description and enforce payment safety checks ---
         bill_description: str | None = None
         if tx.bill_id:
-            bill = await self.bill_repo.get_by_user(tx.bill_id, user_id)
-            if not bill:
+            bill = await self.bill_repo.get_with_lock(tx.bill_id)
+            if not bill or bill.user_id != user_id:
                 raise EntityNotFoundError("Associated bill not found or does not belong to user.")
             if bill.status == "PAID":
                 raise BusinessLogicError(
