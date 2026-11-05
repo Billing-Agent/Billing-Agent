@@ -51,3 +51,8 @@ mobile/windows/flutter/ephemeral/
 .idea/
 .vscode/
 *.swp
+
+# BMAD generated agent skills
+.agent/skills/
+.agents/skills/
+.claude/skills/
