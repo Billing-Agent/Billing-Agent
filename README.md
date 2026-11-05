@@ -79,3 +79,5 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 The API will be available at http://localhost:8000.
+
+The payment simulator route is absent by default and always absent when `APP_ENVIRONMENT=production`. For an isolated local development or test workflow, use a disposable `billing_agent_test` (or `billing_agent_test_<suffix>`) database, set `APP_ENVIRONMENT=development` or `test`, set `ENABLE_DEV_PAYMENT_SIMULATOR=true`, and provide a separate `DEV_PAYMENT_SIMULATOR_TOKEN` of at least 32 characters through local environment configuration. Simulator requests must include that token in the `X-Dev-Simulator-Token` header. Do not put the token in source control or use this route with the normal development database. The backend test harness enables it only against the B12-guarded disposable database.

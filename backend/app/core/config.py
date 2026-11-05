@@ -1,9 +1,17 @@
 import logging
+from typing import Literal
+
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Billing Agent API"
     API_V1_STR: str = "/api/v1"
+    APP_ENVIRONMENT: Literal["production", "development", "test"] = "production"
+    ENABLE_DEV_PAYMENT_SIMULATOR: bool = False
+    DEV_PAYMENT_SIMULATOR_TOKEN: SecretStr | None = None
     
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost", "http://localhost:8080", "http://localhost:3000"]
@@ -36,6 +44,23 @@ class Settings(BaseSettings):
     PAYMENT_CONFIRMATION_TTL_SECONDS: int = 300
 
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_ignore_empty=True, extra="ignore")
+
+    @property
+    def dev_payment_simulator_enabled(self) -> bool:
+        if not self.ENABLE_DEV_PAYMENT_SIMULATOR or self.APP_ENVIRONMENT == "production":
+            return False
+        if not self.DEV_PAYMENT_SIMULATOR_TOKEN or len(self.DEV_PAYMENT_SIMULATOR_TOKEN.get_secret_value()) < 32:
+            return False
+        if not self.DATABASE_URL:
+            return False
+        try:
+            url = make_url(self.DATABASE_URL)
+        except (ArgumentError, ValueError):
+            return False
+        database = url.database or ""
+        return url.drivername == "postgresql+asyncpg" and (
+            database == "billing_agent_test" or database.startswith("billing_agent_test_")
+        )
 
 settings = Settings()
 

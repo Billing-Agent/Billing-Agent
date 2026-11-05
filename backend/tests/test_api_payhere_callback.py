@@ -29,7 +29,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.main import app
+from app.main import app, get_application
+from app.core.config import settings
 from app.models.bill import Bill
 from app.models.payment_method import PaymentMethod
 from app.models.transaction import Transaction
@@ -150,6 +151,47 @@ async def create_test_data(
 # ---------------------------------------------------------------------------
 # Test Cases
 # ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_signed_callback_succeeds_with_simulator_disabled(db_session: AsyncSession):
+    _, bill, _, tx = await create_test_data(db_session)
+    amount = f"{tx.amount:.2f}"
+    callback_data = {
+        "merchant_id": TEST_MERCHANT_ID,
+        "order_id": str(tx.id),
+        "payhere_amount": amount,
+        "payhere_currency": tx.currency,
+        "status_code": "2",
+        "md5sig": compute_callback_sig(TEST_MERCHANT_ID, str(tx.id), amount, tx.currency, "2"),
+        "payment_id": "PH-NO-SIMULATOR",
+    }
+
+    with patch.object(settings, "ENABLE_DEV_PAYMENT_SIMULATOR", False):
+        protected_app = get_application()
+    assert not any(path.startswith("/api/v1/dev/") for path in protected_app.openapi()["paths"])
+
+    async def override_get_db():
+        yield db_session
+
+    protected_app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=protected_app), base_url="http://test") as client:
+            with patch.multiple("app.core.config.settings", **PAYHERE_CONFIG):
+                response = await client.post("/api/v1/payhere/callback", data=callback_data)
+                invalid_data = dict(callback_data, md5sig="invalid")
+                invalid_response = await client.post("/api/v1/payhere/callback", data=invalid_data)
+    finally:
+        protected_app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["transaction_status"] == "SUCCESS"
+    assert invalid_response.status_code == 400
+    await db_session.refresh(tx)
+    await db_session.refresh(bill)
+    assert tx.provider == "PAYHERE"
+    assert tx.status == "SUCCESS"
+    assert bill.status == "PAID"
+
 
 @pytest.mark.asyncio
 async def test_callback_success_updates_tx_and_bill(
@@ -742,7 +784,7 @@ async def test_callback_rejects_json_payload(
 
 @pytest.mark.asyncio
 async def test_simulate_success_still_works(
-    async_client: AsyncClient, db_session: AsyncSession
+    async_client: AsyncClient, db_session: AsyncSession, dev_simulator_headers
 ):
     """
     Requirement 11:
@@ -752,7 +794,7 @@ async def test_simulate_success_still_works(
     _, bill, _, tx = await create_test_data(db_session)
 
     response = await async_client.post(
-        f"/api/v1/dev/payments/{tx.id}/simulate-success"
+        f"/api/v1/dev/payments/{tx.id}/simulate-success", headers=dev_simulator_headers
     )
 
     assert response.status_code == 200

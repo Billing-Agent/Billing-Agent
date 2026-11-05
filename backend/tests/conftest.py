@@ -43,6 +43,10 @@ if "app.core.config" in sys.modules or "app.db.session" in sys.modules:
     )
 
 os.environ["DATABASE_URL"] = test_database_url
+# The simulator is available only in this explicitly isolated test process.
+os.environ["APP_ENVIRONMENT"] = "test"
+os.environ["ENABLE_DEV_PAYMENT_SIMULATOR"] = "true"
+os.environ["DEV_PAYMENT_SIMULATOR_TOKEN"] = "billing-agent-tests-only-simulator-token"
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal, engine as test_engine
@@ -50,6 +54,11 @@ from app.models.bill import Bill
 from app.models.payment_method import PaymentMethod
 from app.models.transaction import Transaction
 from app.models.user import User
+
+
+@pytest.fixture
+def dev_simulator_headers():
+    return {"X-Dev-Simulator-Token": "billing-agent-tests-only-simulator-token"}
 
 if make_url(settings.DATABASE_URL) != target_url or test_engine.url != target_url:
     raise pytest.UsageError("Fixture and application engines must use the same test database.")
