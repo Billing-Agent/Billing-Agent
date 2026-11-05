@@ -432,3 +432,24 @@ The backend authorizes payments.
 PayHere confirms provider payment state.
 
 The database is the system of record.
+
+<!-- bmad:context -->
+<!-- Verified 2026-11-06 against ddacdadc8a24d6739d9e8371ad6ee73dfe680955. Managed by bmad-project-context; refresh this block without replacing the project rules above. -->
+
+## Orientation
+
+This is an existing Flutter/FastAPI billing application with Google ADK + Gemini and PayHere sandbox integration. Preserve the project rules above and use the implementation as evidence of current behavior. BMAD implementation context and its adoption ledger live in `_bmad-output/project-context.md`; recorded gaps are not permission to weaken security rules.
+
+## Where things are
+
+- For work in `backend/app/`, `mobile/lib/`, `backend/tests/`, or `mobile/test/`, read `_bmad-output/project-context.md` before changing authentication, agent, bill, payment, or test behavior.
+- Trace payment changes through `backend/app/services/payment.py`, the agent confirmation endpoint, repositories, and both Flutter checkout callers; do not assume the assistant and manual-payment paths are identical.
+- Refresh the context against source after significant changes; preserve existing policy and record observed agent mistakes with `bmad-project-context`.
+
+## Running and verifying
+
+- Use the test commands in the Testing section above, with the safety caveats in `_bmad-output/project-context.md`.
+- Do not assume backend tests are read-only or entirely rolled back: `test_concurrency_prepare_different_idempotency_keys` commits through the configured database session without cleanup. Use an isolated disposable test database for database-writing test runs.
+- Treat static inspection as unexecuted validation; do not report tests, provider integration, or concurrency guarantees as runtime-verified without running the relevant checks.
+
+<!-- /bmad:context -->
