@@ -10,14 +10,20 @@ class BillingService:
         self.db = db
         self.repo = BillRepository(db)
 
-    async def get_bill_by_biller_and_account(self, biller: str, account_number: str) -> Bill:
-        bill = await self.repo.get_by_biller_and_account(biller, account_number)
+    async def get_bill_by_biller_and_account(self, biller: str, account_number: str, user_id: UUID) -> Bill:
+        bill = await self.repo.get_by_biller_and_account(biller, account_number, user_id)
         if not bill:
             raise EntityNotFoundError(f"Bill not found for biller {biller} and account {account_number}")
         return bill
 
     async def get_bill_by_id(self, bill_id: UUID) -> Bill:
         bill = await self.repo.get(bill_id)
+        if not bill:
+            raise EntityNotFoundError(f"Bill not found with ID {bill_id}")
+        return bill
+
+    async def get_user_bill_by_id(self, bill_id: UUID, user_id: UUID) -> Bill:
+        bill = await self.repo.get_by_user(bill_id, user_id)
         if not bill:
             raise EntityNotFoundError(f"Bill not found with ID {bill_id}")
         return bill

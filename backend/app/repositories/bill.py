@@ -9,11 +9,12 @@ class BillRepository(BaseRepository[Bill]):
     def __init__(self, db: AsyncSession):
         super().__init__(Bill, db)
 
-    async def get_by_biller_and_account(self, biller: str, account_number: str) -> Optional[Bill]:
+    async def get_by_biller_and_account(self, biller: str, account_number: str, user_id: UUID) -> Optional[Bill]:
         result = await self.db.execute(
             select(self.model).filter(
                 func.lower(self.model.biller) == func.lower(biller),
-                self.model.account_number == account_number
+                self.model.account_number == account_number,
+                self.model.user_id == user_id,
             )
         )
         return result.scalars().first()
