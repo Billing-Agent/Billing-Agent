@@ -39,9 +39,11 @@ async def async_client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 
 def _mock_settings():
@@ -392,14 +394,14 @@ async def test_initiate_pending_transaction_while_bill_unpaid_succeeds(async_cli
 
 
 @pytest.mark.asyncio
-async def test_concurrency_prepare_different_idempotency_keys():
+async def test_concurrency_prepare_different_idempotency_keys(committed_concurrency_user_id):
     """
     3. Same bill, concurrent/near-concurrent prepare behavior
     - verify only one PENDING transaction exists even when concurrent requests have different idempotency keys
     """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         async with AsyncSessionLocal() as session:
-            user = User(name="Conc Test", email=f"conc_{uuid4()}@test.com", is_active=True)
+            user = User(id=committed_concurrency_user_id, name="Conc Test", email=f"conc_{uuid4()}@test.com", is_active=True)
             session.add(user)
             await session.commit()
 

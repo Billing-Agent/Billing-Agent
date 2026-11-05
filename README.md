@@ -60,11 +60,15 @@ python -m app.services.seed
 *Warning: This populates fake accounts for testing. It does not connect to real CEB, SLT, or Dialog APIs.*
 
 ### 5. Running the Test Suite
-Tests use isolated nested transactions to prevent destroying seed data while enforcing data isolation constraints.
+Backend tests require a separate, disposable PostgreSQL database with its schema already prepared. Set `BILLING_TEST_DATABASE_URL` to a database named `billing_agent_test` or `billing_agent_test_<suffix>`; the test guard rejects the normal `billing_agent` database. Most tests use rollback-isolated savepoints, but two payment concurrency tests use independent committed sessions to exercise real locking. Those tests remove their own rows during teardown, including after failures. Do not run the suite against development data.
 ```bash
 cd backend
-export DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/billing_agent
+export BILLING_TEST_DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/billing_agent_test
 pytest -v
+```
+The test runner uses this URL for both the fixture engine and application sessions. It does not create the database or run migrations. When running inside Compose, verify that the disposable database exists and has the expected schema, then pass its container-reachable URL explicitly:
+```bash
+docker compose exec -e BILLING_TEST_DATABASE_URL=postgresql+asyncpg://user:password@db:5432/billing_agent_test backend pytest -q
 ```
 
 ### 6. Running FastAPI Locally

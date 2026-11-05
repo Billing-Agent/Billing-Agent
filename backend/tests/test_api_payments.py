@@ -21,9 +21,11 @@ async def async_client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_api_payments_prepare(async_client, db_session):
@@ -205,17 +207,17 @@ async def test_api_payments_simulate_success(async_client, db_session):
     assert res_sim2.json()["status"] == "SUCCESS"
 
 @pytest.mark.asyncio
-async def test_api_payments_concurrency():
+async def test_api_payments_concurrency(committed_concurrency_user_id):
     # To test true concurrency, we must NOT override the db dependency.
     # The app will use its own engine pool allowing true concurrent DB transactions.
     
-    # 1. Setup Data using a raw client (persists to dev db, so we use random UUIDs)
+    # 1. Setup committed data in the disposable test database.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         from app.db.session import AsyncSessionLocal
         
         # We need a user, bill, and PM. Let's just create them directly via a one-off session.
         async with AsyncSessionLocal() as session:
-            user_c = User(name="Concurrency User", email=f"conc_{uuid4()}@test.com", is_active=True)
+            user_c = User(id=committed_concurrency_user_id, name="Concurrency User", email=f"conc_{uuid4()}@test.com", is_active=True)
             session.add(user_c)
             await session.commit()
             
