@@ -1,4 +1,47 @@
 .env
+.env.*
+local.env
+.envrc
+**/.env
+**/.env.*
+**/local.env
+**/.envrc
+
+# Local credential inputs
+**/secrets.json
+**/credentials.json
+**/service-account.json
+**/service_account.json
+**/application_default_credentials.json
+**/firebase-adminsdk-*.json
+**/gcp-service-account-*.json
+**/.aws/credentials
+**/.npmrc
+**/.pypirc
+
+# Private keys and signing material
+**/*.key
+**/*private*.pem
+**/key.pem
+**/server-key.pem
+**/server_key.pem
+**/tls-key.pem
+**/tls_key.pem
+**/signing-key.pem
+**/signing_key.pem
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/*.mobileprovision
+**/id_rsa
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
+
+# Local logs
+**/*.log
+
 .venv/
 env/
 __pycache__/
