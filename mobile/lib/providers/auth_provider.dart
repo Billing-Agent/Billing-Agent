@@ -18,13 +18,43 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final repository = ref.watch(authRepositoryProvider);
   final storage = ref.watch(tokenStorageProvider);
   final apiClient = ref.watch(apiClientProvider);
-  final notifier = AuthNotifier(repository: repository, tokenStorage: storage, apiClient: apiClient);
+  final notifier = AuthNotifier(
+      repository: repository, tokenStorage: storage, apiClient: apiClient);
   apiClient.onUnauthorized = () {
     notifier.handleUnauthorized();
   };
   return notifier;
 });
 
+/// A unique lifetime for one authenticated mobile session.
+///
+/// A new instance is created after every logout/login boundary, even when the
+/// same account signs in again. User-scoped providers and asynchronous work use
+/// object identity plus [isActive] to reject state from superseded sessions.
+class AuthenticatedSession {
+  final String userId;
+  bool _isActive = true;
+
+  AuthenticatedSession(this.userId);
+
+  bool get isActive => _isActive;
+
+  void _invalidate() {
+    _isActive = false;
+  }
+}
+
+final authenticatedSessionProvider = Provider<AuthenticatedSession?>((ref) {
+  final authState = ref.watch(authProvider);
+  final user = authState.user;
+  if (!authState.isAuthenticated || user == null) {
+    return null;
+  }
+
+  final session = AuthenticatedSession(user.id);
+  ref.onDispose(session._invalidate);
+  return session;
+});
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repository;
@@ -99,8 +129,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await _repository.logout();
+    // End the mobile session before secure-storage I/O so late requests and SDK
+    // callbacks cannot update user-scoped state during logout.
     state = AuthState.unauthenticated();
+    _apiClient.clearToken();
+    await _repository.logout();
   }
 
   Future<void> handleUnauthorized() async {

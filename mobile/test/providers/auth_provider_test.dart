@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:mobile/services/api_client.dart';
@@ -11,6 +12,22 @@ import 'package:mobile/repositories/auth_repository.dart';
 import 'package:mobile/providers/auth_provider.dart';
 import 'package:mobile/models/auth_state.dart';
 import '../core/token_storage_test.dart';
+
+class BlockingDeleteTokenStorage extends TokenStorage {
+  BlockingDeleteTokenStorage() : super(storage: MockFlutterSecureStorage());
+
+  final deleteStarted = Completer<void>();
+  final allowDelete = Completer<void>();
+
+  @override
+  Future<String?> getToken() async => 'active_token';
+
+  @override
+  Future<void> deleteToken() async {
+    deleteStarted.complete();
+    await allowDelete.future;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -26,9 +43,11 @@ void main() {
     });
 
     test('startup with no token sets unauthenticated state', () async {
-      final mockClient = MockClient((request) async => http.Response('{}', 200));
+      final mockClient =
+          MockClient((request) async => http.Response('{}', 200));
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -40,7 +59,8 @@ void main() {
       expect(notifier.state.status, AuthStatus.unauthenticated);
     });
 
-    test('startup with valid token calls /auth/me and sets authenticated state', () async {
+    test('startup with valid token calls /auth/me and sets authenticated state',
+        () async {
       await tokenStorage.saveToken('valid_token');
 
       final mockClient = MockClient((request) async {
@@ -59,7 +79,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -72,7 +93,9 @@ void main() {
       expect(notifier.state.user?.name, 'Existing User');
     });
 
-    test('startup with invalid token deletes token and sets unauthenticated state', () async {
+    test(
+        'startup with invalid token deletes token and sets unauthenticated state',
+        () async {
       await tokenStorage.saveToken('invalid_token');
 
       final mockClient = MockClient((request) async {
@@ -80,7 +103,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -93,7 +117,9 @@ void main() {
       expect(await tokenStorage.getToken(), isNull);
     });
 
-    test('login succeeds: parses token-only response, fetches user via /auth/me, and sets authenticated state', () async {
+    test(
+        'login succeeds: parses token-only response, fetches user via /auth/me, and sets authenticated state',
+        () async {
       final mockClient = MockClient((request) async {
         if (request.url.path.endsWith('/auth/login')) {
           return http.Response(
@@ -119,7 +145,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -136,7 +163,9 @@ void main() {
       expect(await tokenStorage.getToken(), 'new_login_token');
     });
 
-    test('login with invalid credentials sets unauthenticated state and cleans up token', () async {
+    test(
+        'login with invalid credentials sets unauthenticated state and cleans up token',
+        () async {
       await tokenStorage.saveToken('stale_token');
 
       final mockClient = MockClient((request) async {
@@ -151,7 +180,8 @@ void main() {
 
       final apiClient = ApiClient(client: mockClient);
       apiClient.setToken('stale_token');
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -173,7 +203,9 @@ void main() {
       expect(await tokenStorage.getToken(), isNull);
     });
 
-    test('login failure during current-user lookup leaves app unauthenticated and cleans up token', () async {
+    test(
+        'login failure during current-user lookup leaves app unauthenticated and cleans up token',
+        () async {
       final mockClient = MockClient((request) async {
         if (request.url.path.endsWith('/auth/login')) {
           return http.Response(
@@ -194,7 +226,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -215,7 +248,8 @@ void main() {
       expect(await tokenStorage.getToken(), isNull);
     });
 
-    test('successful registration followed by login sets authenticated state', () async {
+    test('successful registration followed by login sets authenticated state',
+        () async {
       final mockClient = MockClient((request) async {
         if (request.url.path.endsWith('/auth/register')) {
           final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -263,7 +297,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -272,7 +307,8 @@ void main() {
       );
 
       await Future.delayed(Duration.zero);
-      await notifier.register('Registered User', 'reg@example.com', 'secret123');
+      await notifier.register(
+          'Registered User', 'reg@example.com', 'secret123');
 
       expect(notifier.state.status, AuthStatus.authenticated);
       expect(notifier.state.user?.name, 'Registered User');
@@ -280,7 +316,8 @@ void main() {
       expect(await tokenStorage.getToken(), 'jwt_reg_token');
     });
 
-    test('registration failure sets unauthenticated state and cleans up token', () async {
+    test('registration failure sets unauthenticated state and cleans up token',
+        () async {
       await tokenStorage.saveToken('stale_token');
 
       final mockClient = MockClient((request) async {
@@ -295,7 +332,8 @@ void main() {
 
       final apiClient = ApiClient(client: mockClient);
       apiClient.setToken('stale_token');
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -306,7 +344,8 @@ void main() {
       await Future.delayed(Duration.zero);
 
       try {
-        await notifier.register('Bad User', 'existing@example.com', 'secret123');
+        await notifier.register(
+            'Bad User', 'existing@example.com', 'secret123');
         fail('Should have thrown ValidationError');
       } catch (e) {
         expect(e, isA<ValidationError>());
@@ -317,7 +356,9 @@ void main() {
       expect(await tokenStorage.getToken(), isNull);
     });
 
-    test('registration succeeds but subsequent login fails sets unauthenticated state and clears token', () async {
+    test(
+        'registration succeeds but subsequent login fails sets unauthenticated state and clears token',
+        () async {
       final mockClient = MockClient((request) async {
         if (request.url.path.endsWith('/auth/register')) {
           return http.Response(
@@ -339,7 +380,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -378,7 +420,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,
@@ -393,6 +436,42 @@ void main() {
 
       expect(notifier.state.status, AuthStatus.unauthenticated);
       expect(await tokenStorage.getToken(), isNull);
+    });
+
+    test('logout invalidates the authenticated session before storage cleanup',
+        () async {
+      final blockingStorage = BlockingDeleteTokenStorage();
+      final mockClient = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'id': 'u-1',
+            'name': 'Active User',
+            'email': 'active@example.com',
+          }),
+          200,
+        );
+      });
+      final apiClient = ApiClient(client: mockClient);
+      final repo = AuthRepository(
+        apiClient: apiClient,
+        tokenStorage: blockingStorage,
+      );
+      final notifier = AuthNotifier(
+        repository: repo,
+        tokenStorage: blockingStorage,
+        apiClient: apiClient,
+      );
+
+      await Future.delayed(Duration.zero);
+      expect(notifier.state.status, AuthStatus.authenticated);
+
+      final logout = notifier.logout();
+      await blockingStorage.deleteStarted.future;
+
+      expect(notifier.state.status, AuthStatus.unauthenticated);
+
+      blockingStorage.allowDelete.complete();
+      await logout;
     });
 
     test('handleUnauthorized logs out if currently authenticated', () async {
@@ -413,7 +492,8 @@ void main() {
       });
 
       final apiClient = ApiClient(client: mockClient);
-      final repo = AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
+      final repo =
+          AuthRepository(apiClient: apiClient, tokenStorage: tokenStorage);
 
       final notifier = AuthNotifier(
         repository: repo,

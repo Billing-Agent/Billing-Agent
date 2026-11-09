@@ -10,6 +10,7 @@ class ApiClient {
   final http.Client _client;
   final TokenStorage? _tokenStorage;
   String? _token;
+  int _authGeneration = 0;
   void Function()? onUnauthorized;
 
   ApiClient({
@@ -21,14 +22,20 @@ class ApiClient {
 
   void setToken(String token) {
     _token = token;
+    _authGeneration++;
   }
 
   void clearToken() {
     _token = null;
+    _authGeneration++;
   }
 
   /// Map HTTP status codes to AppError exceptions.
-  void _handleResponseError(http.Response response, {String? path}) {
+  void _handleResponseError(
+    http.Response response, {
+    String? path,
+    required int requestAuthGeneration,
+  }) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return;
     }
@@ -37,14 +44,16 @@ class ApiClient {
 
     switch (response.statusCode) {
       case 400:
-        throw ValidationError(message ?? "Please check the bill or payment details.");
+        throw ValidationError(
+            message ?? "Please check the bill or payment details.");
       case 401:
         final isAuthEndpoint = path != null &&
             (path.endsWith('/auth/login') || path.endsWith('/auth/register'));
-        if (!isAuthEndpoint) {
+        if (!isAuthEndpoint && requestAuthGeneration == _authGeneration) {
           onUnauthorized?.call();
         }
-        throw UnauthorizedError(message ?? "Unauthorized. Please log in again.");
+        throw UnauthorizedError(
+            message ?? "Unauthorized. Please log in again.");
       case 404:
         throw NetworkError("Bill not found."); // Map 404 cleanly
       case 409:
@@ -83,7 +92,12 @@ class ApiClient {
     };
 
     if ((_token == null || _token!.isEmpty) && _tokenStorage != null) {
-      _token = await _tokenStorage.getToken();
+      final storageReadGeneration = _authGeneration;
+      final storedToken = await _tokenStorage.getToken();
+      if (storageReadGeneration == _authGeneration && storedToken != _token) {
+        _token = storedToken;
+        _authGeneration++;
+      }
     }
 
     if (_token != null && _token!.isNotEmpty) {
@@ -96,11 +110,16 @@ class ApiClient {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}$path');
       final headers = await _buildHeaders();
+      final requestAuthGeneration = _authGeneration;
       final response = await _client
           .get(uri, headers: headers)
           .timeout(const Duration(seconds: 30));
-          
-      _handleResponseError(response, path: path);
+
+      _handleResponseError(
+        response,
+        path: path,
+        requestAuthGeneration: requestAuthGeneration,
+      );
       return jsonDecode(response.body);
     } on TimeoutException {
       throw NetworkError("Unable to connect. Please check your connection.");
@@ -113,11 +132,17 @@ class ApiClient {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}$path');
       final headers = await _buildHeaders();
+      final requestAuthGeneration = _authGeneration;
       final response = await _client
-          .post(uri, headers: headers, body: data != null ? jsonEncode(data) : null)
+          .post(uri,
+              headers: headers, body: data != null ? jsonEncode(data) : null)
           .timeout(const Duration(seconds: 30));
 
-      _handleResponseError(response, path: path);
+      _handleResponseError(
+        response,
+        path: path,
+        requestAuthGeneration: requestAuthGeneration,
+      );
       return jsonDecode(response.body);
     } on TimeoutException {
       throw NetworkError("Unable to connect. Please check your connection.");
