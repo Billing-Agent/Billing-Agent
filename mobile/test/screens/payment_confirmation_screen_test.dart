@@ -7,8 +7,39 @@ import 'package:mobile/models/payhere_initiate.dart';
 import 'package:mobile/models/transaction.dart';
 import 'package:mobile/repositories/payment_repository.dart';
 import 'package:mobile/repositories/bill_repository.dart';
+import 'package:mobile/repositories/auth_repository.dart';
 import 'package:mobile/screens/payment/payment_confirmation_screen.dart';
 import 'package:mobile/services/payhere_checkout_service.dart';
+import 'package:mobile/services/api_client.dart';
+import 'package:mobile/providers/auth_provider.dart';
+import 'package:mobile/models/auth_state.dart';
+import 'package:mobile/models/user.dart';
+import 'package:mobile/core/storage/token_storage.dart';
+import '../core/token_storage_test.dart';
+
+class TestAuthNotifier extends AuthNotifier {
+  TestAuthNotifier()
+      : super(
+          repository: AuthRepository(
+            apiClient: ApiClient(),
+            tokenStorage: TokenStorage(storage: MockFlutterSecureStorage()),
+          ),
+          tokenStorage: TokenStorage(storage: MockFlutterSecureStorage()),
+          apiClient: ApiClient(),
+        ) {
+    state = AuthState.authenticated(
+      const User(id: 'user-a', name: 'User A', email: 'a@example.com'),
+    );
+  }
+
+  @override
+  Future<void> checkAuthStatus() async {}
+
+  @override
+  Future<void> logout() async {
+    state = AuthState.unauthenticated();
+  }
+}
 
 class MockPayHereCheckoutService implements PayHereCheckoutService {
   PayHereInitiateResponse? lastInitiateResponse;
@@ -72,7 +103,8 @@ class FakePaymentRepository implements PaymentRepository {
   Future<List<Transaction>> getUserTransactions() async => [];
 
   @override
-  Future<Transaction> preparePayment(String billId, String paymentMethodId, String idempotencyKey) async {
+  Future<Transaction> preparePayment(
+      String billId, String paymentMethodId, String idempotencyKey) async {
     prepareCount++;
     return Transaction(
       id: returnedTransactionId,
@@ -149,12 +181,16 @@ void main() {
     required FakePaymentRepository paymentRepo,
     required MockPayHereCheckoutService checkoutService,
     FakeBillRepository? billRepo,
+    TestAuthNotifier? authNotifier,
   }) {
+    final activeAuthNotifier = authNotifier ?? TestAuthNotifier();
     return ProviderScope(
       overrides: [
+        authProvider.overrideWith((ref) => activeAuthNotifier),
         paymentRepositoryProvider.overrideWithValue(paymentRepo),
         payHereCheckoutServiceProvider.overrideWithValue(checkoutService),
-        if (billRepo != null) billRepositoryProvider.overrideWithValue(billRepo),
+        if (billRepo != null)
+          billRepositoryProvider.overrideWithValue(billRepo),
       ],
       child: MaterialApp(
         home: PaymentConfirmationScreen(bill: testBill),
@@ -163,7 +199,8 @@ void main() {
   }
 
   group('PaymentConfirmationScreen PayHere Flow', () {
-    testWidgets('prepare followed by initiate and launches PayHere checkout', (tester) async {
+    testWidgets('prepare followed by initiate and launches PayHere checkout',
+        (tester) async {
       final paymentRepo = FakePaymentRepository();
       final checkoutService = MockPayHereCheckoutService();
 
@@ -187,7 +224,9 @@ void main() {
       expect(checkoutService.lastInitiateResponse?.hash, 'MD5HASH12345');
     });
 
-    testWidgets('duplicate Confirm tap protection prevents repeated prepare and initiate calls', (tester) async {
+    testWidgets(
+        'duplicate Confirm tap protection prevents repeated prepare and initiate calls',
+        (tester) async {
       final paymentRepo = FakePaymentRepository();
       final checkoutService = MockPayHereCheckoutService();
 
@@ -207,9 +246,13 @@ void main() {
       expect(checkoutService.launchCount, 1);
     });
 
-    testWidgets('SUCCESS result rendering: authoritative backend status renders success dialog and refreshes state', (tester) async {
-      final paymentRepo = FakePaymentRepository()..backendTransactionStatus = 'SUCCESS';
-      final checkoutService = MockPayHereCheckoutService()..autoTrigger = 'complete';
+    testWidgets(
+        'SUCCESS result rendering: authoritative backend status renders success dialog and refreshes state',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository()
+        ..backendTransactionStatus = 'SUCCESS';
+      final checkoutService = MockPayHereCheckoutService()
+        ..autoTrigger = 'complete';
       final billRepo = FakeBillRepository();
 
       await tester.pumpWidget(createWidget(
@@ -233,12 +276,19 @@ void main() {
       expect(find.text('Transaction ID: tx-test-uuid-001'), findsOneWidget);
 
       // Verify old message is NOT shown
-      expect(find.textContaining('Actual payment processing is not implemented yet'), findsNothing);
+      expect(
+          find.textContaining(
+              'Actual payment processing is not implemented yet'),
+          findsNothing);
     });
 
-    testWidgets('backend status is used instead of trusting client callback (backend says FAILED despite client complete)', (tester) async {
-      final paymentRepo = FakePaymentRepository()..backendTransactionStatus = 'FAILED';
-      final checkoutService = MockPayHereCheckoutService()..autoTrigger = 'complete';
+    testWidgets(
+        'backend status is used instead of trusting client callback (backend says FAILED despite client complete)',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository()
+        ..backendTransactionStatus = 'FAILED';
+      final checkoutService = MockPayHereCheckoutService()
+        ..autoTrigger = 'complete';
 
       await tester.pumpWidget(createWidget(
         paymentRepo: paymentRepo,
@@ -253,12 +303,17 @@ void main() {
       expect(paymentRepo.getStatusCount, greaterThanOrEqualTo(1));
       expect(find.text('Payment Failed'), findsOneWidget);
       expect(find.text('Payment Successful'), findsNothing);
-      expect(find.byKey(const Key('payment_result_retry_button')), findsOneWidget);
+      expect(
+          find.byKey(const Key('payment_result_retry_button')), findsOneWidget);
     });
 
-    testWidgets('CANCELLED result rendering when checkout is dismissed and backend is CANCELLED', (tester) async {
-      final paymentRepo = FakePaymentRepository()..backendTransactionStatus = 'CANCELLED';
-      final checkoutService = MockPayHereCheckoutService()..autoTrigger = 'dismiss';
+    testWidgets(
+        'CANCELLED result rendering when checkout is dismissed and backend is CANCELLED',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository()
+        ..backendTransactionStatus = 'CANCELLED';
+      final checkoutService = MockPayHereCheckoutService()
+        ..autoTrigger = 'dismiss';
 
       await tester.pumpWidget(createWidget(
         paymentRepo: paymentRepo,
@@ -274,9 +329,13 @@ void main() {
       expect(find.text('Transaction ID: tx-test-uuid-001'), findsOneWidget);
     });
 
-    testWidgets('PENDING result rendering: shows processing and confirmation message', (tester) async {
-      final paymentRepo = FakePaymentRepository()..backendTransactionStatus = 'PENDING';
-      final checkoutService = MockPayHereCheckoutService()..autoTrigger = 'complete';
+    testWidgets(
+        'PENDING result rendering: shows processing and confirmation message',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository()
+        ..backendTransactionStatus = 'PENDING';
+      final checkoutService = MockPayHereCheckoutService()
+        ..autoTrigger = 'complete';
 
       await tester.pumpWidget(createWidget(
         paymentRepo: paymentRepo,
@@ -288,9 +347,46 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Payment Processing'), findsOneWidget);
-      expect(find.text('Your payment is still being confirmed.'), findsOneWidget);
+      expect(
+          find.text('Your payment is still being confirmed.'), findsOneWidget);
       expect(find.text('Transaction ID: tx-test-uuid-001'), findsOneWidget);
-      expect(find.textContaining('Actual payment processing is not implemented yet'), findsNothing);
+      expect(
+          find.textContaining(
+              'Actual payment processing is not implemented yet'),
+          findsNothing);
+    });
+
+    testWidgets(
+        'logout clears local payment state and hides the prior account bill',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository();
+      final checkoutService = MockPayHereCheckoutService();
+      final authNotifier = TestAuthNotifier();
+
+      await tester.pumpWidget(createWidget(
+        paymentRepo: paymentRepo,
+        checkoutService: checkoutService,
+        authNotifier: authNotifier,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('CEB'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirm_payment_button')));
+      await tester.pump();
+      expect(checkoutService.launchCount, 1);
+
+      await authNotifier.logout();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('payment_session_ended_message')),
+          findsOneWidget);
+      expect(find.text('CEB'), findsNothing);
+
+      checkoutService.onCompletedCallback?.call('late-user-a-result');
+      await tester.pumpAndSettle();
+
+      expect(paymentRepo.getStatusCount, 0);
+      expect(find.byKey(const Key('payment_result_dialog')), findsNothing);
     });
   });
 }

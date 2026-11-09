@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/agent_message.dart';
 import '../models/transaction.dart';
+import 'auth_provider.dart';
 import '../services/agent_service.dart';
 import '../services/payhere_checkout_service.dart';
 import '../repositories/payment_repository.dart';
@@ -46,15 +47,22 @@ class AgentChatState {
 
 class AgentChatNotifier extends StateNotifier<AgentChatState> {
   final Ref _ref;
+  final AuthenticatedSession? _session;
   final Uuid _uuid;
+  bool _isDisposed = false;
 
-  AgentChatNotifier(this._ref, {Uuid? uuid})
+  AgentChatNotifier(this._ref, this._session, {Uuid? uuid})
       : _uuid = uuid ?? const Uuid(),
         super(const AgentChatState());
 
+  bool get _canUseSession =>
+      !_isDisposed && _session != null && _session.isActive;
+
   AgentService get _agentService => _ref.read(agentServiceProvider);
-  PaymentRepository get _paymentRepository => _ref.read(paymentRepositoryProvider);
-  PayHereCheckoutService get _checkoutService => _ref.read(payHereCheckoutServiceProvider);
+  PaymentRepository get _paymentRepository =>
+      _ref.read(paymentRepositoryProvider);
+  PayHereCheckoutService get _checkoutService =>
+      _ref.read(payHereCheckoutServiceProvider);
 
   /// Send a natural language message to the Billing Assistant.
   ///
@@ -63,7 +71,10 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
   /// strictly as a chat message. It does NOT invoke confirmation or trigger PayHere.
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || state.isLoading || state.isConfirming) {
+    if (!_canUseSession ||
+        trimmed.isEmpty ||
+        state.isLoading ||
+        state.isConfirming) {
       return;
     }
 
@@ -82,6 +93,7 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
 
     try {
       final response = await _agentService.sendMessage(trimmed);
+      if (!_canUseSession) return;
 
       final assistantMessage = AgentMessage(
         id: _uuid.v4(),
@@ -98,7 +110,9 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
         isLoading: false,
       );
     } catch (e) {
-      String userErrorMsg = "Unable to reach the billing assistant. Please try again.";
+      if (!_canUseSession) return;
+      String userErrorMsg =
+          "Unable to reach the billing assistant. Please try again.";
       if (e is AppError) {
         userErrorMsg = e.message;
       }
@@ -124,6 +138,7 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
   /// Cancelling does NOT call the confirmation endpoint, does NOT launch PayHere,
   /// and does NOT create a transaction.
   void cancelPlan(String messageId) {
+    if (!_canUseSession) return;
     state = state.copyWith(
       messages: state.messages.map((m) {
         if (m.id == messageId) {
@@ -160,7 +175,9 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
     })? onPaymentResult,
   }) async {
     // 1. Prevent duplicate confirmation requests or double taps
-    if (state.isConfirming || state.activeConfirmationId != null) {
+    if (!_canUseSession ||
+        state.isConfirming ||
+        state.activeConfirmationId != null) {
       return;
     }
 
@@ -174,7 +191,8 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
       ),
     );
 
-    if (targetMessage.id.isEmpty || targetMessage.cardState != PaymentPlanCardState.pending) {
+    if (targetMessage.id.isEmpty ||
+        targetMessage.cardState != PaymentPlanCardState.pending) {
       return;
     }
 
@@ -192,20 +210,26 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
 
     try {
       // 2. Call backend confirmation endpoint with ONLY confirmation_id
-      final confirmResponse = await _agentService.confirmPayment(confirmationId);
+      final confirmResponse =
+          await _agentService.confirmPayment(confirmationId);
+      if (!_canUseSession) return;
 
       final transactionId = confirmResponse.transactionId;
       if (transactionId.isEmpty) {
-        throw ServerError("Invalid transaction reference received from server.");
+        throw ServerError(
+            "Invalid transaction reference received from server.");
       }
 
       // 3. Initiate PayHere parameters using existing flow
-      final initiateResponse = await _paymentRepository.initiatePayment(transactionId);
+      final initiateResponse =
+          await _paymentRepository.initiatePayment(transactionId);
+      if (!_canUseSession) return;
 
       // 4. Launch PayHere mobile checkout
       _checkoutService.startPayment(
         initiateResponse: initiateResponse,
         onCompleted: (paymentId) {
+          if (!_canUseSession) return;
           _verifyBackendStatus(
             transactionId: transactionId,
             messageId: messageId,
@@ -215,16 +239,19 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
           );
         },
         onError: (err) {
+          if (!_canUseSession) return;
           _verifyBackendStatus(
             transactionId: transactionId,
             messageId: messageId,
             wasDismissed: false,
-            fallbackErrorMessage: err.isNotEmpty ? err : "Payment was interrupted.",
+            fallbackErrorMessage:
+                err.isNotEmpty ? err : "Payment was interrupted.",
             onPaymentResult: onPaymentResult,
             onError: onError,
           );
         },
         onDismissed: () {
+          if (!_canUseSession) return;
           _verifyBackendStatus(
             transactionId: transactionId,
             messageId: messageId,
@@ -235,6 +262,7 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
         },
       );
     } catch (e) {
+      if (!_canUseSession) return;
       String userErrorMsg = "Unable to confirm payment. Please try again.";
       if (e is AppError) {
         userErrorMsg = e.message;
@@ -275,6 +303,7 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
       String? message,
     })? onPaymentResult,
   }) async {
+    if (!_canUseSession) return;
     try {
       Transaction? transaction;
       int attempts = 0;
@@ -282,17 +311,20 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
 
       while (attempts < maxAttempts) {
         transaction = await _paymentRepository.getPaymentStatus(transactionId);
+        if (!_canUseSession) return;
         if (transaction != null && transaction.status != 'PENDING') {
           break;
         }
         attempts++;
         if (attempts < maxAttempts && !wasDismissed) {
           await Future.delayed(const Duration(milliseconds: 1200));
+          if (!_canUseSession) return;
         } else {
           break;
         }
       }
 
+      if (!_canUseSession) return;
       state = state.copyWith(
         isConfirming: false,
         clearActiveConfirmationId: true,
@@ -383,6 +415,7 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
         }
       }
     } catch (e) {
+      if (!_canUseSession) return;
       state = state.copyWith(
         isConfirming: false,
         clearActiveConfirmationId: true,
@@ -394,8 +427,16 @@ class AgentChatNotifier extends StateNotifier<AgentChatState> {
       onError?.call(userErrorMsg);
     }
   }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
 }
 
-final agentChatProvider = StateNotifierProvider<AgentChatNotifier, AgentChatState>((ref) {
-  return AgentChatNotifier(ref);
+final agentChatProvider =
+    StateNotifierProvider<AgentChatNotifier, AgentChatState>((ref) {
+  final session = ref.watch(authenticatedSessionProvider);
+  return AgentChatNotifier(ref, session);
 });

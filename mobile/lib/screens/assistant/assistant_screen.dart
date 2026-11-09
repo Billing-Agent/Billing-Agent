@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../models/agent_message.dart';
 import '../../providers/agent_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/payment_plan_card.dart';
 
 class AssistantScreen extends ConsumerStatefulWidget {
@@ -15,6 +16,7 @@ class AssistantScreen extends ConsumerStatefulWidget {
 class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  Route<dynamic>? _paymentDialogRoute;
 
   @override
   void dispose() {
@@ -48,33 +50,33 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     if (message.confirmationId == null) return;
 
     ref.read(agentChatProvider.notifier).confirmPaymentPlan(
-      messageId: message.id,
-      confirmationId: message.confirmationId!,
-      onError: (errorMsg) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMsg)),
+          messageId: message.id,
+          confirmationId: message.confirmationId!,
+          onError: (errorMsg) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(errorMsg)),
+            );
+          },
+          onPaymentResult: ({
+            required String status,
+            required String title,
+            required String transactionId,
+            required String amount,
+            required String currency,
+            String? message,
+          }) {
+            if (!mounted) return;
+            _showPaymentResultDialog(
+              status: status,
+              title: title,
+              transactionId: transactionId,
+              amount: amount,
+              currency: currency,
+              message: message,
+            );
+          },
         );
-      },
-      onPaymentResult: ({
-        required String status,
-        required String title,
-        required String transactionId,
-        required String amount,
-        required String currency,
-        String? message,
-      }) {
-        if (!mounted) return;
-        _showPaymentResultDialog(
-          status: status,
-          title: title,
-          transactionId: transactionId,
-          amount: amount,
-          currency: currency,
-          message: message,
-        );
-      },
-    );
   }
 
   void _showPaymentResultDialog({
@@ -85,10 +87,13 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     required String currency,
     String? message,
   }) {
+    Route<dynamic>? openedRoute;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        openedRoute = ModalRoute.of(ctx);
+        _paymentDialogRoute = openedRoute;
         IconData icon;
         Color color;
         switch (status) {
@@ -133,9 +138,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 Text(message, key: const Key('payment_result_message')),
                 const SizedBox(height: 12),
               ],
-              Text('Amount: $currency $amount', key: const Key('payment_result_amount')),
+              Text('Amount: $currency $amount',
+                  key: const Key('payment_result_amount')),
               const SizedBox(height: 6),
-              Text('Transaction ID: $transactionId', key: const Key('payment_result_tx_id')),
+              Text('Transaction ID: $transactionId',
+                  key: const Key('payment_result_tx_id')),
             ],
           ),
           actions: [
@@ -152,13 +159,33 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
           ],
         );
       },
-    );
+    ).whenComplete(() {
+      if (identical(_paymentDialogRoute, openedRoute)) {
+        _paymentDialogRoute = null;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(agentChatProvider);
     final theme = Theme.of(context);
+
+    ref.listen<AuthenticatedSession?>(
+      authenticatedSessionProvider,
+      (previous, next) {
+        if (identical(previous, next) || !mounted) return;
+        _textController.clear();
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+        final dialogRoute = _paymentDialogRoute;
+        if (dialogRoute != null) {
+          Navigator.of(context, rootNavigator: true).removeRoute(dialogRoute);
+          _paymentDialogRoute = null;
+        }
+      },
+    );
 
     // Auto-scroll when new messages arrive
     ref.listen<AgentChatState>(agentChatProvider, (_, next) {
@@ -178,8 +205,10 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                   ? _buildEmptyState(theme)
                   : ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      itemCount: chatState.messages.length + (chatState.isLoading ? 1 : 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      itemCount: chatState.messages.length +
+                          (chatState.isLoading ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == chatState.messages.length) {
                           return _buildLoadingBubble(theme);
@@ -254,17 +283,17 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 CircleAvatar(
                   radius: 16,
                   backgroundColor: theme.primaryColor.withOpacity(0.1),
-                  child: Icon(Icons.auto_awesome, size: 16, color: theme.primaryColor),
+                  child: Icon(Icons.auto_awesome,
+                      size: 16, color: theme.primaryColor),
                 ),
                 const SizedBox(width: 8),
               ],
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isUser
-                        ? theme.primaryColor
-                        : Colors.grey.shade100,
+                    color: isUser ? theme.primaryColor : Colors.grey.shade100,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -294,9 +323,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 isConfirming: chatState.isConfirming,
                 errorMessage: message.errorMessage,
                 onConfirm: () => _confirmPayment(message),
-                onCancel: () => ref
-                    .read(agentChatProvider.notifier)
-                    .cancelPlan(message.id),
+                onCancel: () =>
+                    ref.read(agentChatProvider.notifier).cancelPlan(message.id),
               ),
             ),
         ],
@@ -313,7 +341,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
           CircleAvatar(
             radius: 16,
             backgroundColor: theme.primaryColor.withOpacity(0.1),
-            child: Icon(Icons.auto_awesome, size: 16, color: theme.primaryColor),
+            child:
+                Icon(Icons.auto_awesome, size: 16, color: theme.primaryColor),
           ),
           const SizedBox(width: 8),
           Container(

@@ -8,6 +8,7 @@ import '../../models/transaction.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/money_utils.dart';
 import '../../core/errors/app_errors.dart';
+import '../../providers/auth_provider.dart';
 import '../../repositories/providers.dart';
 import '../../repositories/payment_repository.dart';
 import '../../services/payhere_checkout_service.dart';
@@ -19,23 +20,30 @@ class PaymentConfirmationScreen extends ConsumerStatefulWidget {
   const PaymentConfirmationScreen({super.key, this.bill});
 
   @override
-  ConsumerState<PaymentConfirmationScreen> createState() => _PaymentConfirmationScreenState();
+  ConsumerState<PaymentConfirmationScreen> createState() =>
+      _PaymentConfirmationScreenState();
 }
 
-class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationScreen> {
+class _PaymentConfirmationScreenState
+    extends ConsumerState<PaymentConfirmationScreen> {
   late String _idempotencyKey;
+  late final AuthenticatedSession? _originSession;
   String? _transactionId;
   bool _isLoading = false;
+  Route<dynamic>? _resultDialogRoute;
+
+  bool get _isCurrentSession => _originSession?.isActive ?? false;
 
   @override
   void initState() {
     super.initState();
+    _originSession = ref.read(authenticatedSessionProvider);
     // Generate a single idempotency key for this payment intent
     _idempotencyKey = const Uuid().v4();
   }
 
   Future<void> _confirmPayment(PaymentMethod paymentMethod) async {
-    if (widget.bill == null || _isLoading) return;
+    if (!_isCurrentSession || widget.bill == null || _isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -52,6 +60,7 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
           paymentMethod.id,
           _idempotencyKey,
         );
+        if (!_isCurrentSession) return;
         _transactionId = transaction.id;
       }
 
@@ -59,25 +68,29 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
 
       // 2. Initiate PayHere checkout parameters (signed server-side)
       final initiateResponse = await repository.initiatePayment(activeTxId);
+      if (!_isCurrentSession) return;
 
       // 3. Launch PayHere mobile sandbox checkout
       checkoutService.startPayment(
         initiateResponse: initiateResponse,
         onCompleted: (paymentId) {
+          if (!_isCurrentSession) return;
           // PayHere client callback must NOT mark payment successful locally.
           // The backend webhook is authoritative.
           _verifyBackendTransactionStatus(activeTxId, wasDismissed: false);
         },
         onError: (error) {
+          if (!_isCurrentSession) return;
           _handleCheckoutError(activeTxId, error);
         },
         onDismissed: () {
+          if (!_isCurrentSession) return;
           // User closed checkout sheet; verify backend status
           _verifyBackendTransactionStatus(activeTxId, wasDismissed: true);
         },
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
       });
@@ -92,12 +105,13 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
   }
 
   void _handleCheckoutError(String transactionId, String error) {
-    if (!mounted) return;
+    if (!mounted || !_isCurrentSession) return;
     // Check if the backend already recorded a financial state
     _verifyBackendTransactionStatus(
       transactionId,
       wasDismissed: false,
-      fallbackErrorMessage: error.isNotEmpty ? error : 'Payment checkout was interrupted.',
+      fallbackErrorMessage:
+          error.isNotEmpty ? error : 'Payment checkout was interrupted.',
     );
   }
 
@@ -106,7 +120,7 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
     required bool wasDismissed,
     String? fallbackErrorMessage,
   }) async {
-    if (!mounted) return;
+    if (!mounted || !_isCurrentSession) return;
     setState(() {
       _isLoading = true;
     });
@@ -122,28 +136,33 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
 
       while (attempts < maxAttempts) {
         transaction = await repository.getPaymentStatus(transactionId);
+        if (!mounted || !_isCurrentSession) return;
         if (transaction != null && transaction.status != 'PENDING') {
           break;
         }
         attempts++;
         if (attempts < maxAttempts && !wasDismissed) {
           await Future.delayed(const Duration(milliseconds: 1200));
+          if (!mounted || !_isCurrentSession) return;
         } else {
           break;
         }
       }
 
-      if (!mounted) return;
+      if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
       });
 
       if (transaction == null) {
         if (fallbackErrorMessage != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(fallbackErrorMessage)));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(fallbackErrorMessage)));
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Unable to retrieve payment status. Please check your transaction history.')),
+            const SnackBar(
+                content: Text(
+                    'Unable to retrieve payment status. Please check your transaction history.')),
           );
         }
         return;
@@ -205,7 +224,7 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
         }
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
       });
@@ -227,10 +246,14 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
     String? message,
     bool canRetry = false,
   }) {
+    if (!_isCurrentSession) return;
+    Route<dynamic>? openedRoute;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        openedRoute = ModalRoute.of(ctx);
+        _resultDialogRoute = openedRoute;
         IconData icon;
         Color color;
         switch (status) {
@@ -275,9 +298,11 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                 Text(message, key: const Key('payment_result_message')),
                 const SizedBox(height: 12),
               ],
-              Text('Amount: $currency $amount', key: const Key('payment_result_amount')),
+              Text('Amount: $currency $amount',
+                  key: const Key('payment_result_amount')),
               const SizedBox(height: 6),
-              Text('Transaction ID: $transactionId', key: const Key('payment_result_tx_id')),
+              Text('Transaction ID: $transactionId',
+                  key: const Key('payment_result_tx_id')),
             ],
           ),
           actions: [
@@ -307,11 +332,46 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
           ],
         );
       },
-    );
+    ).whenComplete(() {
+      if (identical(_resultDialogRoute, openedRoute)) {
+        _resultDialogRoute = null;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(authenticatedSessionProvider);
+    ref.listen<AuthenticatedSession?>(
+      authenticatedSessionProvider,
+      (previous, next) {
+        if (identical(previous, next) || !mounted) return;
+        final dialogRoute = _resultDialogRoute;
+        if (dialogRoute != null) {
+          Navigator.of(context, rootNavigator: true).removeRoute(dialogRoute);
+          _resultDialogRoute = null;
+        }
+        setState(() {
+          _transactionId = null;
+          _idempotencyKey = const Uuid().v4();
+          _isLoading = false;
+        });
+      },
+    );
+
+    if (!_isCurrentSession) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Confirm Payment')),
+        body: const Center(
+          child: Text(
+            'This payment session has ended. Please select the bill again.',
+            key: Key('payment_session_ended_message'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     if (widget.bill == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Confirm Payment')),
@@ -330,7 +390,10 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
           children: [
             Text(
               'Review your payment',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: AppConstants.paddingMedium),
             Card(
@@ -340,12 +403,14 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                   children: [
                     _buildDetailRow(context, 'Biller', widget.bill!.biller),
                     const Divider(height: AppConstants.paddingMedium),
-                    _buildDetailRow(context, 'Account Number', widget.bill!.accountNumber),
+                    _buildDetailRow(
+                        context, 'Account Number', widget.bill!.accountNumber),
                     const Divider(height: AppConstants.paddingMedium),
                     _buildDetailRow(
                       context,
                       'Total Amount',
-                      MoneyUtils.formatAmount(widget.bill!.amountDue, currency: widget.bill!.currency),
+                      MoneyUtils.formatAmount(widget.bill!.amountDue,
+                          currency: widget.bill!.currency),
                       isTotal: true,
                     ),
                   ],
@@ -370,7 +435,8 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                   child: ListTile(
                     leading: const Icon(Icons.credit_card),
                     title: const Text('Payment Method'),
-                    subtitle: Text('${method.cardBrand ?? method.provider} ending in ${method.lastFour ?? "****"}'),
+                    subtitle: Text(
+                        '${method.cardBrand ?? method.provider} ending in ${method.lastFour ?? "****"}'),
                     trailing: TextButton(
                       onPressed: () {},
                       child: const Text('Change'),
@@ -395,7 +461,9 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
                       key: const Key('confirm_payment_button'),
                       label: 'Confirm Payment',
                       isLoading: _isLoading,
-                      onPressed: _isLoading ? null : () => _confirmPayment(methods.first),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _confirmPayment(methods.first),
                     )
                   : const SizedBox.shrink(),
               orElse: () => const SizedBox.shrink(),
@@ -414,23 +482,24 @@ class _PaymentConfirmationScreenState extends ConsumerState<PaymentConfirmationS
     );
   }
 
-  Widget _buildDetailRow(BuildContext context, String label, String value, {bool isTotal = false}) {
+  Widget _buildDetailRow(BuildContext context, String label, String value,
+      {bool isTotal = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Colors.grey[600],
-          ),
+                color: Colors.grey[600],
+              ),
         ),
         Text(
           value,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-            fontSize: isTotal ? 20 : null,
-            color: isTotal ? Theme.of(context).colorScheme.primary : null,
-          ),
+                fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+                fontSize: isTotal ? 20 : null,
+                color: isTotal ? Theme.of(context).colorScheme.primary : null,
+              ),
         ),
       ],
     );
