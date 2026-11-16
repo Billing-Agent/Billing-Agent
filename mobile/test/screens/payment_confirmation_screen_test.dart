@@ -43,7 +43,6 @@ class TestAuthNotifier extends AuthNotifier {
 
 class MockPayHereCheckoutService implements PayHereCheckoutService {
   PayHereInitiateResponse? lastInitiateResponse;
-  String? lastMerchantSecret;
   void Function(String paymentId)? onCompletedCallback;
   void Function(String error)? onErrorCallback;
   void Function()? onDismissedCallback;
@@ -59,11 +58,9 @@ class MockPayHereCheckoutService implements PayHereCheckoutService {
     required void Function(String error) onError,
     required void Function() onDismissed,
     bool isSandbox = true,
-    String? merchantSecret,
   }) {
     launchCount++;
     lastInitiateResponse = initiateResponse;
-    lastMerchantSecret = merchantSecret;
     onCompletedCallback = onCompleted;
     onErrorCallback = onError;
     onDismissedCallback = onDismissed;

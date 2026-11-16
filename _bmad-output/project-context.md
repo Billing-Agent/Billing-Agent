@@ -66,7 +66,7 @@ Initiation reads an owned PENDING transaction, locks the bill, validates its own
 
 The normal assistant lifecycle is plan → explicit confirmation → PENDING transaction → initiation → SDK checkout → callback/reconciliation → terminal transaction. Successful settlement marks the associated bill PAID and sets amount due to Decimal zero. Failed/cancelled attempts leave the bill unchanged. PENDING is not cancelled merely due to age or client dismissal.
 
-Flutter's mobile SDK adapter uses an app-specific merchant secret from `PayHereConfig`, rather than the returned web checkout hash. This is an existing credential-boundary limitation, not a guarantee that mobile credentials are secret. Sandbox defaults exist in both provider configuration and mobile checkout.
+As of the B03 Recommendation A implementation on 2026-11-16, Flutter no longer accepts or forwards a mobile `merchant_secret` for pinned `payhere_mobilesdk_flutter` 3.1.1. The backend initiation contract still returns its server-generated checkout `hash`, which the pinned native payment map does not consume. Android was runtime-verified without the mobile key; iOS remains static-only evidence.
 
 ## Callback handling
 
@@ -147,7 +147,7 @@ These are static findings with source pointers, not new architecture decisions o
 | Permissive retrieval validation | `payhere_retrieval.py` substitutes a requested order ID when absent and defaults successful outer responses to SUCCESS without an item status; `payment.py` permits absent amount/currency. |
 | Terminal callbacks ignored | `payment.py` ignores every later callback on SUCCESS/FAILED/CANCELLED, including chargeback after success; terminal reconciliation also skips retrieval. |
 | Provider I/O under lock | Reconciliation holds the transaction lock while awaiting OAuth/search HTTP operations. |
-| Mobile credential exposure | `mobile/lib/core/constants/payhere_config.dart` and `models/payhere_initiate.dart` pass a configured merchant secret into the mobile SDK; the code acknowledges extractability. Backend initiation does not expose its secret. |
+| Mobile credential exposure (resolved by B03 Recommendation A) | The mobile config and `merchant_secret` payment-map path were removed for pinned SDK 3.1.1. Backend `PAYHERE_SECRET`, callback verification, initiation hash generation, and Retrieval credentials remain server-side. Android has runtime evidence; iOS remains static-only. |
 | Cross-account cache lifetime | `mobile/lib/providers/auth_provider.dart` logout clears auth but does not invalidate bill/history/payment-method/chat providers, which are not keyed to the authenticated user. |
 | Dismissal display mismatch | Both Flutter payment callers can show CANCELLED while backend remains PENDING. Assistant cards can stay confirming after pending results or polling errors. No financial DB mutation follows from this display. |
 | Assistant comment/implementation mismatch | `agent_provider.dart` claims PENDING confirmation-response validation in a comment but only checks nonempty transaction ID before calling initiation; the backend still guards initiation. |

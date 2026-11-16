@@ -14,7 +14,6 @@ abstract class PayHereCheckoutService {
     required void Function(String error) onError,
     required void Function() onDismissed,
     bool isSandbox = true,
-    String? merchantSecret,
   });
 }
 
@@ -27,11 +26,9 @@ class DefaultPayHereCheckoutService implements PayHereCheckoutService {
     required void Function(String error) onError,
     required void Function() onDismissed,
     bool isSandbox = true,
-    String? merchantSecret,
   }) {
     final paymentObject = initiateResponse.toPaymentObject(
       sandbox: isSandbox,
-      merchantSecret: merchantSecret,
     );
     PayHere.startPayment(
       paymentObject,

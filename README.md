@@ -94,7 +94,7 @@ The backend follows an endpoint → service → repository → database structur
 - Passwords are bcrypt-hashed; JWTs require signature, subject, issue time, expiry, and access-token type.
 - Money uses PostgreSQL `NUMERIC` / Python `Decimal` and is serialized to Flutter as strings.
 - Payment preparation uses idempotency keys and row locking, and reuses an existing `PENDING` attempt for the same bill.
-- Backend callback-signing and Retrieval API credentials are server-side only. Raw backend secrets are not returned by initiation APIs; the separate mobile credential boundary remains a documented limitation below.
+- Backend callback-signing and Retrieval API credentials are server-side only. Raw backend secrets are not returned by initiation APIs or embedded as mobile build inputs.
 - The development success simulator is disabled by default and unavailable in production configuration. Its guarded test mode requires a disposable test database and a separate token.
 - Local environment files, signing material, copied mobile packages, and generated build outputs are excluded from Git. Backend secret inputs are also excluded from its Docker build context.
 
@@ -102,7 +102,7 @@ The backend follows an endpoint → service → repository → database structur
 
 This is intentionally presented as an MVP, not a production payment system:
 
-- PayHere is configured for **Sandbox** use. Provider credential scope, supported mobile credential handling, retrieval response details, and late/reversal event policy require further provider validation before real-money use.
+- PayHere is configured for **Sandbox** use. Android checkout with pinned Flutter SDK 3.1.1 is verified without a mobile `merchant_secret`; iOS remains static-only evidence, and retrieval response details plus late/reversal event policy require further provider validation before real-money use.
 - Assistant confirmations are stored in process memory. They are not durable across restarts or shared across multiple backend workers, and concurrent single-use authorization still needs a database-backed atomic design.
 - AI conversation sessions are request-local; the Flutter UI retains messages, but the backend does not provide durable multi-turn conversation memory.
 - There is no scheduled reconciliation worker. Mobile performs short status polling, while reconciliation currently requires an explicit authenticated API call.
@@ -157,7 +157,7 @@ PAYHERE_API_APP_ID=<sandbox-retrieval-app-id>
 PAYHERE_API_APP_SECRET=<sandbox-retrieval-app-secret>
 ```
 
-Do not reuse the backend `PAYHERE_SECRET` as a mobile build value. Mobile credential handling remains a documented sandbox integration question, and compiled mobile constants are extractable.
+Keep `PAYHERE_SECRET` and Retrieval API credentials on the backend. The pinned Flutter SDK 3.1.1 integration does not accept a mobile `PAYHERE_MERCHANT_SECRET` build input.
 
 ### Run with Docker Compose
 
@@ -203,7 +203,7 @@ flutter run
 
 For local development, Android Emulator uses `http://10.0.2.2:8000/api/v1`; iOS Simulator, desktop, and web use loopback. A physical device needs a local LAN backend address configured for that development session. Do not commit a personal LAN address.
 
-PayHere checkout additionally requires a correctly registered sandbox app/package and provider-approved credentials. Do not distribute a build containing a backend callback-verification secret.
+PayHere checkout still requires a correctly registered sandbox app/package. Flutter package 3.1.1 checkout on Android was runtime-verified without a mobile `merchant_secret`; iOS has static-only evidence and remains a separate runtime-parity check. Never put the backend callback-verification or Retrieval credentials in a mobile build.
 
 ## Testing
 

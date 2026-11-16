@@ -1,12 +1,11 @@
-import '../core/constants/payhere_config.dart';
-
 /// PayHere Initiate Response Model
 ///
 /// Encapsulates the PayHere checkout parameters returned by
 /// POST /api/v1/payments/{transaction_id}/initiate.
 ///
-/// The Flutter Mobile SDK uses [merchant_secret] and does not require web-checkout
-/// parameters (`hash`, `return_url`, `cancel_url`).
+/// The pinned PayHere Flutter SDK 3.1.1 uses the native checkout fields below
+/// and does not consume web-checkout parameters (`hash`, `return_url`,
+/// `cancel_url`) or a `merchant_secret` payment-map key.
 class PayHereInitiateResponse {
   final String merchantId;
   final String orderId; // Transaction ID
@@ -87,26 +86,16 @@ class PayHereInitiateResponse {
   }
 
   /// Converts this response into the payment map expected by the PayHere Flutter SDK.
-  /// Converts this response into the payment map expected by the PayHere Flutter SDK.
   ///
-  /// The Flutter Mobile SDK requires [merchant_secret] (obtained by registering/whitelisting
-  /// the app package in PayHere) and does not use web-hosted checkout parameters
-  /// (`hash`, `return_url`, `cancel_url`).
-  ///
-  /// The secret is resolved from [merchantSecret] if provided, or falls back to
-  /// [PayHereConfig.merchantSecret].
+  /// Keep the backend-returned web checkout fields on this response model to
+  /// preserve the API contract, but do not forward them to the pinned native
+  /// SDK payment map.
   Map<String, dynamic> toPaymentObject({
     bool sandbox = true,
-    String? merchantSecret,
   }) {
-    final effectiveSecret = (merchantSecret != null && merchantSecret.isNotEmpty)
-        ? merchantSecret
-        : PayHereConfig.merchantSecret;
-
     return <String, dynamic>{
       'sandbox': sandbox,
       'merchant_id': merchantId,
-      'merchant_secret': effectiveSecret,
       'notify_url': notifyUrl,
       'order_id': orderId,
       'items': items,

@@ -84,6 +84,10 @@ The mobile Merchant Secret cannot by itself grant access to the backend Retrieva
 
 ## Manual verification gates
 
+### Recommendation A implementation follow-up — 2026-11-16
+
+Recommendation A is implemented in the current worktree and recorded in `spec-b03-recommendation-a-remove-mobile-merchant-secret.md`. Flutter no longer accepts `PAYHERE_MERCHANT_SECRET`, carries a `merchantSecret` argument, or emits `merchant_secret` in the pinned 3.1.1 native payment map. The backend-generated initiation `hash`, server-side `PAYHERE_SECRET`, callback verification, Retrieval credentials/flow, and backend-authoritative status polling remain unchanged. Automated worktree verification does not replace the earlier Android sandbox runtime evidence, and iOS remains static-only evidence.
+
 - Merchant portal: verify sandbox and eventual live integration records, approved package/bundle/domain identities, and whether mobile and backend secret **fingerprints** match. Record only equality/inequality and record labels, never values.
 - PayHere support or provider documentation: clarify which secret signs notifications from a 3.1.1 mobile checkout, whether separate Android/iOS app registrations are needed, and whether a distinct backend callback verification key is supported.
 - Controlled sandbox: Android checkout with the extra mobile key omitted, signed callback, backend state, and Retrieval result is complete. Repeat on iOS if runtime platform-parity evidence is required. Use test merchant records only, and do not log credentials or full payloads.

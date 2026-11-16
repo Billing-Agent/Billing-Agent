@@ -191,7 +191,6 @@ class SessionCheckoutService implements PayHereCheckoutService {
     required void Function(String error) onError,
     required void Function() onDismissed,
     bool isSandbox = true,
-    String? merchantSecret,
   }) {
     launchCount++;
     this.onCompleted = onCompleted;

@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile/core/constants/payhere_config.dart';
 import 'package:mobile/models/payhere_initiate.dart';
 
 void main() {
@@ -23,11 +22,9 @@ void main() {
       'hash': '4E723829C157E6D7DF38AC5812FE4EBA',
     };
 
-    tearDown(() {
-      PayHereConfig.reset();
-    });
-
-    test('parses all fields from backend initiate response including hash and redirect urls', () {
+    test(
+        'parses all fields from backend initiate response including hash and redirect urls',
+        () {
       final response = PayHereInitiateResponse.fromMap(sampleJson);
 
       expect(response.merchantId, '1211149');
@@ -44,11 +41,12 @@ void main() {
       expect(response.country, 'Sri Lanka');
       expect(response.returnUrl, 'http://localhost:8000/api/v1/payhere/return');
       expect(response.cancelUrl, 'http://localhost:8000/api/v1/payhere/cancel');
-      expect(response.notifyUrl, 'http://localhost:8000/api/v1/payhere/callback');
+      expect(
+          response.notifyUrl, 'http://localhost:8000/api/v1/payhere/callback');
       expect(response.hash, '4E723829C157E6D7DF38AC5812FE4EBA');
     });
 
-    test('toPaymentObject excludes web checkout fields (hash, return_url, cancel_url)', () {
+    test('toPaymentObject contains only pinned native SDK checkout fields', () {
       final response = PayHereInitiateResponse.fromMap(sampleJson);
       final paymentObj = response.toPaymentObject(sandbox: true);
 
@@ -57,67 +55,34 @@ void main() {
       expect(paymentObj['order_id'], 'f7d2f9d2-9bc5-4424-9bdf-992a6c8e3e44');
       expect(paymentObj['amount'], '1500.00');
       expect(paymentObj['currency'], 'LKR');
-      expect(paymentObj['notify_url'], 'http://localhost:8000/api/v1/payhere/callback');
+      expect(paymentObj['notify_url'],
+          'http://localhost:8000/api/v1/payhere/callback');
 
       // The Flutter Mobile SDK must NOT use web-checkout redirect/hash parameters
       expect(paymentObj.containsKey('hash'), isFalse);
       expect(paymentObj.containsKey('return_url'), isFalse);
       expect(paymentObj.containsKey('cancel_url'), isFalse);
+      expect(paymentObj.containsKey('merchant_secret'), isFalse);
       expect(paymentObj.containsKey('payhere_secret'), isFalse);
-    });
 
-    test('toPaymentObject includes merchant_secret when explicitly supplied', () {
-      final response = PayHereInitiateResponse.fromMap(sampleJson);
-      final paymentObj = response.toPaymentObject(
-        sandbox: true,
-        merchantSecret: 'test_app_secret_123',
-      );
-
-      expect(paymentObj['merchant_secret'], 'test_app_secret_123');
-      expect(paymentObj.containsKey('hash'), isFalse);
-      expect(paymentObj.containsKey('return_url'), isFalse);
-      expect(paymentObj.containsKey('cancel_url'), isFalse);
-
-      // Verify all native SDK keys
-      expect(paymentObj.keys, containsAll([
-        'sandbox',
-        'merchant_id',
-        'merchant_secret',
-        'notify_url',
-        'order_id',
-        'items',
-        'amount',
-        'currency',
-        'first_name',
-        'last_name',
-        'email',
-        'phone',
-        'address',
-        'city',
-        'country',
-      ]));
-    });
-
-    test('toPaymentObject includes merchant_secret when configured via PayHereConfig', () {
-      PayHereConfig.setTemporarySecret('configured_sandbox_secret');
-
-      final response = PayHereInitiateResponse.fromMap(sampleJson);
-      final paymentObj = response.toPaymentObject(sandbox: true);
-
-      expect(paymentObj['merchant_secret'], 'configured_sandbox_secret');
-      expect(paymentObj.containsKey('hash'), isFalse);
-    });
-
-    test('toPaymentObject contains empty merchant_secret when not configured', () {
-      PayHereConfig.reset();
-
-      final response = PayHereInitiateResponse.fromMap(sampleJson);
-      final paymentObj = response.toPaymentObject(sandbox: true);
-
-      expect(paymentObj['merchant_secret'], '');
-      expect(paymentObj.containsKey('hash'), isFalse);
-      expect(paymentObj.containsKey('return_url'), isFalse);
-      expect(paymentObj.containsKey('cancel_url'), isFalse);
+      expect(
+          paymentObj.keys,
+          unorderedEquals([
+            'sandbox',
+            'merchant_id',
+            'notify_url',
+            'order_id',
+            'items',
+            'amount',
+            'currency',
+            'first_name',
+            'last_name',
+            'email',
+            'phone',
+            'address',
+            'city',
+            'country',
+          ]));
     });
 
     test('toMap converts back to map preserving backend snake_case format', () {

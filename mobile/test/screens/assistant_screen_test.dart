@@ -146,7 +146,6 @@ class MockPayHereCheckoutService implements PayHereCheckoutService {
     required void Function(String error) onError,
     required void Function() onDismissed,
     bool isSandbox = true,
-    String? merchantSecret,
   }) {
     launchCount++;
     lastInitiateResponse = initiateResponse;
