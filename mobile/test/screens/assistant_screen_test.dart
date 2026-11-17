@@ -21,6 +21,7 @@ import 'package:mobile/repositories/auth_repository.dart';
 import 'package:mobile/services/api_client.dart';
 import 'package:mobile/core/storage/token_storage.dart';
 import 'package:mobile/core/routing/app_router.dart';
+import 'package:mobile/widgets/amount_text.dart';
 import '../core/token_storage_test.dart';
 
 class FakeAgentService implements AgentService {
@@ -265,6 +266,59 @@ void main() {
       expect(find.byKey(const Key('assistant_text_field')), findsOneWidget);
     });
 
+    testWidgets(
+        '2b. Empty state explains confirmation boundary and suggestions use chat flow',
+        (tester) async {
+      fakeAgentService.nextChatResponse = const AgentChatResponse(
+        message: 'You have one unpaid bill.',
+        intent: 'VIEW_BILLS',
+        requiresConfirmation: false,
+      );
+
+      await tester.pumpWidget(createTestWidget());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('I can prepare a payment; you must confirm it.'),
+        findsOneWidget,
+      );
+      expect(find.text('Show my bills'), findsOneWidget);
+      expect(find.text('Find my electricity bill'), findsOneWidget);
+
+      await tester.tap(find.text('Show my bills'));
+      await tester.pumpAndSettle();
+
+      expect(fakeAgentService.chatSentMessages, contains('Show my bills'));
+      expect(find.text('You have one unpaid bill.'), findsOneWidget);
+      expect(find.byKey(const Key('payment_plan_card')), findsNothing);
+    });
+
+    testWidgets('2c. Suggestion prompts do not discard a composed draft',
+        (tester) async {
+      fakeAgentService.nextChatResponse = const AgentChatResponse(
+        message: 'Here are your bills.',
+        requiresConfirmation: false,
+      );
+
+      await tester.pumpWidget(createTestWidget());
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('assistant_text_field')),
+        'my unfinished question',
+      );
+
+      await tester.tap(find.text('Show my bills'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('assistant_text_field')))
+            .controller!
+            .text,
+        'my unfinished question',
+      );
+    });
+
     // 3. User sends "Show my bills" -> correct API request and assistant response displayed.
     testWidgets(
         '3. User sends Show my bills: correct API request & response displayed',
@@ -321,7 +375,7 @@ void main() {
       expect(find.byKey(const Key('payment_plan_card')), findsOneWidget);
       expect(find.byKey(const Key('payment_plan_biller')), findsOneWidget);
       expect(find.text('CEB'), findsOneWidget);
-      expect(find.text('Account ****2347'), findsOneWidget);
+      expect(find.text('****2347'), findsOneWidget);
       expect(
           find.byKey(const Key('payment_plan_confirm_button')), findsOneWidget);
       expect(
@@ -740,7 +794,11 @@ void main() {
 
       expect(find.byKey(const Key('payment_result_dialog')), findsOneWidget);
       expect(find.text('Payment Successful'), findsOneWidget);
-      expect(find.text('Amount: LKR 7200.00'), findsOneWidget);
+      final resultAmount = tester.widget<AmountText>(
+        find.byKey(const Key('payment_result_amount')),
+      );
+      expect(resultAmount.amount, '7200.00');
+      expect(resultAmount.currency, 'LKR');
     });
 
     testWidgets('17. Account transition clears Assistant draft and chat state',

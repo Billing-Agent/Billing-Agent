@@ -32,6 +32,9 @@ class PaymentPlanCard extends StatelessWidget {
         cardState == PaymentPlanCardState.pending && !isConfirming;
     final isBusy = cardState == PaymentPlanCardState.confirming ||
         (isConfirming && cardState == PaymentPlanCardState.pending);
+    final presentationStatus = _presentationStatus(isBusy);
+    final showsConfirmationBoundary =
+        cardState == PaymentPlanCardState.pending || isBusy;
 
     return Container(
       key: const Key('payment_plan_card'),
@@ -58,54 +61,133 @@ class PaymentPlanCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Biller + Status Chip
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  plan.biller,
-                  key: const Key('payment_plan_biller'),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onSurface,
-                  ),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.radiusMedium),
+                ),
+                child: Icon(
+                  Icons.verified_user_outlined,
+                  size: 21,
+                  color: theme.colorScheme.onPrimaryContainer,
                 ),
               ),
-              const SizedBox(width: AppConstants.spacingSmall),
-              StatusChip(
-                key: const Key('payment_plan_status'),
-                status: plan.billStatus,
+              const SizedBox(width: AppConstants.spacingMedium),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SECURE PAYMENT REVIEW',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: AppConstants.spacingXSmall),
+                    Text(
+                      _headerSubtitle(isBusy),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-
-          // Masked Account Number
+          const SizedBox(height: AppConstants.spacingLarge),
           Text(
-            'Account ${plan.maskedAccountNumber}',
-            key: const Key('payment_plan_account'),
-            style: theme.textTheme.bodyMedium?.copyWith(
+            'Amount to pay',
+            style: theme.textTheme.labelMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Formatted Amount
+          const SizedBox(height: AppConstants.spacingXSmall),
           AmountText(
             key: const Key('payment_plan_amount'),
             amount: plan.amount,
             currency: plan.currency,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w800,
               color: theme.colorScheme.primary,
             ),
           ),
-          const SizedBox(height: 8),
-
-          // State indicators or Action Buttons
+          const SizedBox(height: AppConstants.spacingLarge),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppConstants.spacingMedium),
+            decoration: BoxDecoration(
+              color: semantic.surfaceSubtle,
+              borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+              border: Border.all(color: semantic.border),
+            ),
+            child: Column(
+              children: [
+                _detailRow(
+                  context,
+                  label: 'Biller',
+                  value: plan.biller,
+                  valueKey: const Key('payment_plan_biller'),
+                ),
+                const SizedBox(height: AppConstants.spacingMedium),
+                _detailRow(
+                  context,
+                  label: 'Account',
+                  value: plan.maskedAccountNumber,
+                  valueKey: const Key('payment_plan_account'),
+                ),
+                const SizedBox(height: AppConstants.spacingMedium),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        cardState == PaymentPlanCardState.pending && !isBusy
+                            ? 'Bill status'
+                            : 'Plan status',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    StatusChip(
+                      key: const Key('payment_plan_status'),
+                      status: presentationStatus,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (showsConfirmationBoundary) ...[
+            const SizedBox(height: AppConstants.spacingMedium),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: AppConstants.iconSmall,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: AppConstants.spacingSmall),
+                Expanded(
+                  child: Text(
+                    'This plan cannot move money. You must confirm before checkout starts.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (cardState == PaymentPlanCardState.confirmed) ...[
             const Divider(height: 24),
             Row(
@@ -116,11 +198,13 @@ class PaymentPlanCard extends StatelessWidget {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Payment confirmed and launched',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: semantic.onSuccessContainer,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    'Payment verified by the backend',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: semantic.onSuccessContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -145,14 +229,8 @@ class PaymentPlanCard extends StatelessWidget {
               ],
             ),
           ] else ...[
-            Text(
-              'Would you like to proceed with this payment?',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
             if (errorMessage != null && errorMessage!.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: AppConstants.spacingSmall),
               Text(
                 errorMessage!,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -161,7 +239,7 @@ class PaymentPlanCard extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: AppConstants.spacingLarge),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -193,6 +271,71 @@ class PaymentPlanCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  String _presentationStatus(bool isBusy) {
+    if (isBusy) return 'CONFIRMING';
+    switch (cardState) {
+      case PaymentPlanCardState.confirmed:
+        return 'SUCCESS';
+      case PaymentPlanCardState.cancelled:
+        return 'CANCELLED';
+      case PaymentPlanCardState.pending:
+      case PaymentPlanCardState.confirming:
+      case PaymentPlanCardState.failed:
+        return cardState == PaymentPlanCardState.failed
+            ? 'FAILED'
+            : plan.billStatus;
+    }
+  }
+
+  String _headerSubtitle(bool isBusy) {
+    if (isBusy) return 'Confirming this plan with the backend';
+    switch (cardState) {
+      case PaymentPlanCardState.confirmed:
+        return 'Final status was verified by the backend';
+      case PaymentPlanCardState.cancelled:
+        return 'This payment plan was cancelled';
+      case PaymentPlanCardState.failed:
+        return 'This payment plan could not be confirmed';
+      case PaymentPlanCardState.pending:
+      case PaymentPlanCardState.confirming:
+        return 'Confirm the details before PayHere opens';
+    }
+  }
+
+  Widget _detailRow(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required Key valueKey,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppConstants.spacingMedium),
+        Expanded(
+          flex: 2,
+          child: Text(
+            value,
+            key: valueKey,
+            textAlign: TextAlign.end,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

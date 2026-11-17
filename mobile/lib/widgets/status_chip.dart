@@ -70,6 +70,7 @@ class StatusChip extends StatelessWidget {
       case 'UNPAID':
       case 'PENDING':
       case 'PROCESSING':
+      case 'CONFIRMING':
         return _StatusPalette(
           background: semantic.pendingContainer,
           foreground: semantic.onPendingContainer,

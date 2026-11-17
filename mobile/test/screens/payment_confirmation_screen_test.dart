@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +17,7 @@ import 'package:mobile/providers/auth_provider.dart';
 import 'package:mobile/models/auth_state.dart';
 import 'package:mobile/models/user.dart';
 import 'package:mobile/core/storage/token_storage.dart';
+import 'package:mobile/widgets/amount_text.dart';
 import '../core/token_storage_test.dart';
 
 class TestAuthNotifier extends AuthNotifier {
@@ -82,6 +85,7 @@ class FakePaymentRepository implements PaymentRepository {
 
   String returnedTransactionId = 'tx-test-uuid-001';
   String backendTransactionStatus = 'SUCCESS';
+  Completer<Transaction?>? statusCompleter;
 
   @override
   Future<List<PaymentMethod>> getUserPaymentMethods() async {
@@ -139,6 +143,9 @@ class FakePaymentRepository implements PaymentRepository {
   @override
   Future<Transaction?> getPaymentStatus(String transactionId) async {
     getStatusCount++;
+    if (statusCompleter != null) {
+      return statusCompleter!.future;
+    }
     return Transaction(
       id: transactionId,
       biller: 'CEB',
@@ -179,6 +186,7 @@ void main() {
     required MockPayHereCheckoutService checkoutService,
     FakeBillRepository? billRepo,
     TestAuthNotifier? authNotifier,
+    Bill? bill,
   }) {
     final activeAuthNotifier = authNotifier ?? TestAuthNotifier();
     return ProviderScope(
@@ -190,12 +198,59 @@ void main() {
           billRepositoryProvider.overrideWithValue(billRepo),
       ],
       child: MaterialApp(
-        home: PaymentConfirmationScreen(bill: testBill),
+        home: PaymentConfirmationScreen(bill: bill ?? testBill),
       ),
     );
   }
 
   group('PaymentConfirmationScreen PayHere Flow', () {
+    testWidgets(
+        'review surface masks account, labels sandbox, and removes unavailable actions',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository();
+      final checkoutService = MockPayHereCheckoutService();
+
+      await tester.pumpWidget(createWidget(
+        paymentRepo: paymentRepo,
+        checkoutService: checkoutService,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('payhere_sandbox_badge')), findsOneWidget);
+      expect(find.text('PAYHERE SANDBOX'), findsOneWidget);
+      expect(find.text('LKR 1,500.00'), findsOneWidget);
+      expect(find.text('•••• 3456'), findsOneWidget);
+      expect(find.text('ACC123456'), findsNothing);
+      expect(find.text('Change'), findsNothing);
+      expect(find.byKey(const Key('payment_trust_copy')), findsOneWidget);
+      expect(find.text('Confirm and open PayHere'), findsOneWidget);
+    });
+
+    testWidgets('short account identifiers remain fully masked',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository();
+      final checkoutService = MockPayHereCheckoutService();
+      final shortAccountBill = Bill(
+        id: 'bill-short',
+        biller: 'Water Board',
+        accountNumber: '1234',
+        amountDue: '500.00',
+        currency: 'LKR',
+        status: 'UNPAID',
+        dueDate: DateTime(2026, 12, 31),
+      );
+
+      await tester.pumpWidget(createWidget(
+        paymentRepo: paymentRepo,
+        checkoutService: checkoutService,
+        bill: shortAccountBill,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('••••'), findsOneWidget);
+      expect(find.text('1234'), findsNothing);
+    });
+
     testWidgets('prepare followed by initiate and launches PayHere checkout',
         (tester) async {
       final paymentRepo = FakePaymentRepository();
@@ -219,6 +274,10 @@ void main() {
       expect(checkoutService.launchCount, 1);
       expect(checkoutService.lastInitiateResponse?.orderId, 'tx-test-uuid-001');
       expect(checkoutService.lastInitiateResponse?.hash, 'MD5HASH12345');
+      expect(
+        find.text('Opening PayHere Sandbox…'),
+        findsOneWidget,
+      );
     });
 
     testWidgets(
@@ -241,6 +300,43 @@ void main() {
       expect(paymentRepo.prepareCount, 1);
       expect(paymentRepo.initiateCount, 1);
       expect(checkoutService.launchCount, 1);
+    });
+
+    testWidgets('client completion displays backend confirmation progress',
+        (tester) async {
+      final paymentRepo = FakePaymentRepository()
+        ..statusCompleter = Completer<Transaction?>();
+      final checkoutService = MockPayHereCheckoutService()
+        ..autoTrigger = 'complete';
+
+      await tester.pumpWidget(createWidget(
+        paymentRepo: paymentRepo,
+        checkoutService: checkoutService,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('confirm_payment_button')));
+      await tester.pump();
+
+      expect(
+        find.text('Confirming payment status with the backend…'),
+        findsOneWidget,
+      );
+      expect(find.text('Payment Successful'), findsNothing);
+
+      paymentRepo.statusCompleter!.complete(
+        Transaction(
+          id: 'tx-test-uuid-001',
+          biller: 'CEB',
+          amount: '1500.00',
+          currency: 'LKR',
+          status: 'SUCCESS',
+          createdAt: DateTime(2026, 11, 18),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Payment Successful'), findsOneWidget);
     });
 
     testWidgets(
@@ -269,7 +365,11 @@ void main() {
       // Verify SUCCESS result dialog
       expect(find.byKey(const Key('payment_result_dialog')), findsOneWidget);
       expect(find.text('Payment Successful'), findsOneWidget);
-      expect(find.text('Amount: LKR 1500.00'), findsOneWidget);
+      final resultAmount = tester.widget<AmountText>(
+        find.byKey(const Key('payment_result_amount')),
+      );
+      expect(resultAmount.amount, '1500.00');
+      expect(resultAmount.currency, 'LKR');
       expect(find.text('Transaction ID: tx-test-uuid-001'), findsOneWidget);
 
       // Verify old message is NOT shown

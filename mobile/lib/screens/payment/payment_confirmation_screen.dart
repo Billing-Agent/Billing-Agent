@@ -6,13 +6,17 @@ import '../../models/bill.dart';
 import '../../models/payment_method.dart';
 import '../../models/transaction.dart';
 import '../../core/constants/app_constants.dart';
-import '../../core/utils/money_utils.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/errors/app_errors.dart';
 import '../../providers/auth_provider.dart';
 import '../../repositories/providers.dart';
 import '../../repositories/payment_repository.dart';
 import '../../services/payhere_checkout_service.dart';
+import '../../widgets/amount_text.dart';
+import '../../widgets/payment_result_dialog.dart';
 import '../../widgets/primary_button.dart';
+
+enum _PaymentProgressStage { idle, openingPayHere, confirmingStatus }
 
 class PaymentConfirmationScreen extends ConsumerStatefulWidget {
   final Bill? bill;
@@ -30,6 +34,7 @@ class _PaymentConfirmationScreenState
   late final AuthenticatedSession? _originSession;
   String? _transactionId;
   bool _isLoading = false;
+  _PaymentProgressStage _progressStage = _PaymentProgressStage.idle;
   Route<dynamic>? _resultDialogRoute;
 
   bool get _isCurrentSession => _originSession?.isActive ?? false;
@@ -47,6 +52,7 @@ class _PaymentConfirmationScreenState
 
     setState(() {
       _isLoading = true;
+      _progressStage = _PaymentProgressStage.idle;
     });
 
     final repository = ref.read(paymentRepositoryProvider);
@@ -71,6 +77,9 @@ class _PaymentConfirmationScreenState
       if (!_isCurrentSession) return;
 
       // 3. Launch PayHere mobile sandbox checkout
+      setState(() {
+        _progressStage = _PaymentProgressStage.openingPayHere;
+      });
       checkoutService.startPayment(
         initiateResponse: initiateResponse,
         onCompleted: (paymentId) {
@@ -93,6 +102,7 @@ class _PaymentConfirmationScreenState
       if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
+        _progressStage = _PaymentProgressStage.idle;
       });
       String msg = 'An unexpected error occurred.';
       if (e is AppError) {
@@ -123,6 +133,7 @@ class _PaymentConfirmationScreenState
     if (!mounted || !_isCurrentSession) return;
     setState(() {
       _isLoading = true;
+      _progressStage = _PaymentProgressStage.confirmingStatus;
     });
 
     final repository = ref.read(paymentRepositoryProvider);
@@ -152,6 +163,7 @@ class _PaymentConfirmationScreenState
       if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
+        _progressStage = _PaymentProgressStage.idle;
       });
 
       if (transaction == null) {
@@ -227,6 +239,7 @@ class _PaymentConfirmationScreenState
       if (!mounted || !_isCurrentSession) return;
       setState(() {
         _isLoading = false;
+        _progressStage = _PaymentProgressStage.idle;
       });
       // Do not convert network errors into FAILED financial status
       String msg = 'Unable to verify payment status with server.';
@@ -254,82 +267,29 @@ class _PaymentConfirmationScreenState
       builder: (ctx) {
         openedRoute = ModalRoute.of(ctx);
         _resultDialogRoute = openedRoute;
-        IconData icon;
-        Color color;
-        switch (status) {
-          case 'SUCCESS':
-            icon = Icons.check_circle;
-            color = Colors.green;
-            break;
-          case 'FAILED':
-            icon = Icons.error;
-            color = Colors.red;
-            break;
-          case 'CANCELLED':
-            icon = Icons.cancel;
-            color = Colors.orange;
-            break;
-          case 'PENDING':
-          default:
-            icon = Icons.hourglass_top;
-            color = Colors.blue;
-            break;
-        }
-
-        return AlertDialog(
-          key: const Key('payment_result_dialog'),
-          title: Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  key: const Key('payment_result_title'),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message != null) ...[
-                Text(message, key: const Key('payment_result_message')),
-                const SizedBox(height: 12),
-              ],
-              Text('Amount: $currency $amount',
-                  key: const Key('payment_result_amount')),
-              const SizedBox(height: 6),
-              Text('Transaction ID: $transactionId',
-                  key: const Key('payment_result_tx_id')),
-            ],
-          ),
-          actions: [
-            if (canRetry)
-              TextButton(
-                key: const Key('payment_result_retry_button'),
-                onPressed: () {
+        return PaymentResultDialog(
+          status: status,
+          title: title,
+          transactionId: transactionId,
+          amount: amount,
+          currency: currency,
+          message: message,
+          onRetry: canRetry
+              ? () {
                   Navigator.of(ctx).pop();
-                  // Reset state for a fresh attempt
+                  // Reset state for a fresh attempt.
                   setState(() {
                     _transactionId = null;
                     _idempotencyKey = const Uuid().v4();
                   });
-                },
-                child: const Text('Retry'),
-              ),
-            TextButton(
-              key: const Key('payment_result_primary_button'),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                if (status == 'SUCCESS') {
-                  context.go('/bills');
                 }
-              },
-              child: Text(status == 'SUCCESS' ? 'View Bills' : 'OK'),
-            ),
-          ],
+              : null,
+          onPrimary: () {
+            Navigator.of(ctx).pop();
+            if (status == 'SUCCESS') {
+              context.go('/bills');
+            }
+          },
         );
       },
     ).whenComplete(() {
@@ -355,6 +315,7 @@ class _PaymentConfirmationScreenState
           _transactionId = null;
           _idempotencyKey = const Uuid().v4();
           _isLoading = false;
+          _progressStage = _PaymentProgressStage.idle;
         });
       },
     );
@@ -380,128 +341,385 @@ class _PaymentConfirmationScreenState
     }
 
     final paymentMethodsAsync = ref.watch(userPaymentMethodsProvider);
+    final theme = Theme.of(context);
+    final semantic = AppSemanticColors.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Confirm Payment')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppConstants.paddingMedium),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Review your payment',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: AppConstants.paddingMedium),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppConstants.paddingLarge),
-                child: Column(
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppConstants.spacingLarge),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Review before continuing',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingXSmall),
+              Text(
+                'Check the amount and destination. PayHere opens only after you confirm.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingLarge),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppConstants.spacingXLarge),
+                  child: Column(
+                    children: [
+                      Container(
+                        key: const Key('payhere_sandbox_badge'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppConstants.spacingMedium,
+                          vertical: AppConstants.spacingSmall,
+                        ),
+                        decoration: BoxDecoration(
+                          color: semantic.informationContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.science_outlined,
+                              size: AppConstants.iconSmall,
+                              color: semantic.onInformationContainer,
+                            ),
+                            const SizedBox(width: AppConstants.spacingXSmall),
+                            Text(
+                              'PAYHERE SANDBOX',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: semantic.onInformationContainer,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppConstants.spacingLarge),
+                      Text(
+                        'Amount to pay',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: AppConstants.spacingXSmall),
+                      AmountText(
+                        amount: widget.bill!.amountDue,
+                        currency: widget.bill!.currency,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineLarge?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: AppConstants.spacingXLarge),
+                      const Divider(height: 1),
+                      const SizedBox(height: AppConstants.spacingLarge),
+                      _buildDetailRow(
+                        context,
+                        'Biller',
+                        widget.bill!.biller,
+                      ),
+                      const SizedBox(height: AppConstants.spacingMedium),
+                      _buildDetailRow(
+                        context,
+                        'Account',
+                        _maskedAccount(widget.bill!.accountNumber),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingLarge),
+              Text(
+                'Payment method',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingSmall),
+              paymentMethodsAsync.when(
+                data: (methods) {
+                  if (methods.isEmpty) {
+                    return Card(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.all(AppConstants.spacingLarge),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.credit_card_off_outlined,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: AppConstants.spacingMedium),
+                            const Expanded(
+                              child: Text(
+                                'No payment methods found. Please add one before continuing.',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  final method = methods.first;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppConstants.spacingLarge),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusMedium,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.credit_card_rounded,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: AppConstants.spacingMedium),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  method.cardBrand ?? method.provider,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(
+                                  height: AppConstants.spacingXSmall,
+                                ),
+                                Text(
+                                  'Ending in ${method.lastFour ?? "••••"}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 20,
+                            color: theme.colorScheme.secondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                loading: () => Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppConstants.spacingLarge),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: AppConstants.spacingMedium),
+                        Text(
+                          'Loading payment method…',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                error: (err, stack) => Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppConstants.spacingLarge),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          color: theme.colorScheme.error,
+                        ),
+                        const SizedBox(width: AppConstants.spacingMedium),
+                        const Expanded(
+                          child: Text('Failed to load payment methods.'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingLarge),
+              Container(
+                key: const Key('payment_trust_copy'),
+                padding: const EdgeInsets.all(AppConstants.spacingMedium),
+                decoration: BoxDecoration(
+                  color: semantic.surfaceSubtle,
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.radiusMedium),
+                  border: Border.all(color: semantic.border),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildDetailRow(context, 'Biller', widget.bill!.biller),
-                    const Divider(height: AppConstants.paddingMedium),
-                    _buildDetailRow(
-                        context, 'Account Number', widget.bill!.accountNumber),
-                    const Divider(height: AppConstants.paddingMedium),
-                    _buildDetailRow(
-                      context,
-                      'Total Amount',
-                      MoneyUtils.formatAmount(widget.bill!.amountDue,
-                          currency: widget.bill!.currency),
-                      isTotal: true,
+                    Icon(
+                      Icons.verified_user_outlined,
+                      size: 20,
+                      color: theme.colorScheme.secondary,
+                    ),
+                    const SizedBox(width: AppConstants.spacingSmall),
+                    Expanded(
+                      child: Text(
+                        'PayHere Sandbox collects the payment. Final status is confirmed only from PayHere provider data by the Billing Agent backend.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: AppConstants.paddingMedium),
+              const SizedBox(height: AppConstants.spacingXLarge),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: paymentMethodsAsync.maybeWhen(
+        data: (methods) => methods.isNotEmpty
+            ? Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(top: BorderSide(color: semantic.border)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.all(AppConstants.spacingLarge),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_progressStage != _PaymentProgressStage.idle) ...[
+                        _buildProgressCard(context),
+                        const SizedBox(height: AppConstants.spacingMedium),
+                      ],
+                      PrimaryButton(
+                        key: const Key('confirm_payment_button'),
+                        label: 'Confirm and open PayHere',
+                        isLoading: _isLoading,
+                        onPressed: _isLoading
+                            ? null
+                            : () => _confirmPayment(methods.first),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : const SizedBox.shrink(),
+        orElse: () => const SizedBox.shrink(),
+      ),
+    );
+  }
 
-            // Payment Methods Section
-            paymentMethodsAsync.when(
-              data: (methods) {
-                if (methods.isEmpty) {
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppConstants.paddingLarge),
-                      child: Text('No payment methods found. Please add one.'),
-                    ),
-                  );
-                }
-                final method = methods.first; // Use the first method for now
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.credit_card),
-                    title: const Text('Payment Method'),
-                    subtitle: Text(
-                        '${method.cardBrand ?? method.provider} ending in ${method.lastFour ?? "****"}'),
-                    trailing: TextButton(
-                      onPressed: () {},
-                      child: const Text('Change'),
+  Widget _buildProgressCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantic = AppSemanticColors.of(context);
+    final isOpening = _progressStage == _PaymentProgressStage.openingPayHere;
+    final message = isOpening
+        ? 'Opening PayHere Sandbox…'
+        : 'Confirming payment status with the backend…';
+
+    return Semantics(
+      liveRegion: true,
+      label: message,
+      child: Container(
+        padding: const EdgeInsets.all(AppConstants.spacingLarge),
+        decoration: BoxDecoration(
+          color: semantic.informationContainer,
+          borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+          border: Border.all(color: semantic.information.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: semantic.onInformationContainer,
+              ),
+            ),
+            const SizedBox(width: AppConstants.spacingMedium),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message,
+                    key: const Key('payment_progress_message'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: semantic.onInformationContainer,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, stack) => const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(AppConstants.paddingLarge),
-                  child: Text('Failed to load payment methods.'),
-                ),
+                  const SizedBox(height: AppConstants.spacingXSmall),
+                  Text(
+                    isOpening
+                        ? 'Complete or close the sandbox checkout to continue.'
+                        : 'The app will not report success until the backend confirms it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: semantic.onInformationContainer,
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: AppConstants.paddingLarge * 2),
-
-            paymentMethodsAsync.maybeWhen(
-              data: (methods) => methods.isNotEmpty
-                  ? PrimaryButton(
-                      key: const Key('confirm_payment_button'),
-                      label: 'Confirm Payment',
-                      isLoading: _isLoading,
-                      onPressed: _isLoading
-                          ? null
-                          : () => _confirmPayment(methods.first),
-                    )
-                  : const SizedBox.shrink(),
-              orElse: () => const SizedBox.shrink(),
-            ),
-
-            const SizedBox(height: AppConstants.paddingMedium),
-            const Center(
-              child: Text(
-                'By confirming, you agree to the Terms of Service.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            )
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(BuildContext context, String label, String value,
-      {bool isTotal = false}) {
+  Widget _buildDetailRow(BuildContext context, String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Colors.grey[600],
-              ),
+        SizedBox(
+          width: 84,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
         ),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-                fontSize: isTotal ? 20 : null,
-                color: isTotal ? Theme.of(context).colorScheme.primary : null,
-              ),
+        const SizedBox(width: AppConstants.spacingMedium),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ),
       ],
     );
+  }
+
+  String _maskedAccount(String accountNumber) {
+    final trimmed = accountNumber.trim();
+    if (trimmed.isEmpty) return 'Not available';
+    if (trimmed.length <= 4) return '••••';
+    final visibleDigits = trimmed.substring(trimmed.length - 4);
+    return '•••• $visibleDigits';
   }
 }
