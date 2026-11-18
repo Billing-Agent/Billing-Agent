@@ -246,7 +246,9 @@ void main() {
 
       expect(find.byKey(const Key('ask_billing_agent_card')), findsOneWidget);
       expect(find.text('Ask Billing Agent'), findsOneWidget);
-      expect(find.text('Pay bills or check balances using natural language'),
+      expect(
+          find.text(
+              'Review bills and prepare a payment using natural language. You stay in control of confirmation.'),
           findsOneWidget);
       // Verify manual actions still exist
       expect(find.text('Pay a Bill'), findsOneWidget);

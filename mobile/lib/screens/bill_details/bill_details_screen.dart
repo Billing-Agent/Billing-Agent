@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../models/bill.dart';
 import '../../core/constants/app_constants.dart';
-import '../../core/utils/money_utils.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/errors/app_errors.dart';
 import '../../repositories/providers.dart';
+import '../../widgets/amount_text.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/state_views.dart';
+import '../../widgets/status_chip.dart';
 
 class BillDetailsScreen extends ConsumerWidget {
   final Bill? initialBill;
@@ -33,19 +35,79 @@ class BillDetailsScreen extends ConsumerWidget {
             return const EmptyStateView(message: 'Bill not found.');
           }
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(AppConstants.paddingMedium),
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spacingLarge,
+              AppConstants.spacingLarge,
+              AppConstants.spacingLarge,
+              AppConstants.spacingXXLarge,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.all(AppConstants.paddingLarge),
+                    padding: const EdgeInsets.all(AppConstants.spacingXLarge),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                bill.biller,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            const SizedBox(
+                              width: AppConstants.spacingMedium,
+                            ),
+                            StatusChip(status: bill.status),
+                          ],
+                        ),
+                        const SizedBox(height: AppConstants.spacingXLarge),
+                        Text(
+                          'Amount due',
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                        const SizedBox(height: AppConstants.spacingXSmall),
+                        AmountText(
+                          key: const Key('bill_details_amount'),
+                          amount: bill.amountDue,
+                          currency: bill.currency,
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineLarge
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.spacingLarge),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppConstants.spacingLarge),
                     child: Column(
                       children: [
-                        _buildDetailRow(context, 'Biller', bill.biller),
-                        const Divider(height: AppConstants.paddingLarge),
-                        _buildDetailRow(context, 'Account Number', bill.accountNumber),
-                        const Divider(height: AppConstants.paddingLarge),
+                        _buildDetailRow(
+                          context,
+                          'Account',
+                          _maskedAccount(bill.accountNumber),
+                          valueKey: const Key('bill_details_masked_account'),
+                        ),
+                        const Divider(height: AppConstants.spacingXLarge),
                         _buildDetailRow(
                           context,
                           'Due Date',
@@ -53,27 +115,10 @@ class BillDetailsScreen extends ConsumerWidget {
                               ? '${bill.dueDate!.year}-${bill.dueDate!.month.toString().padLeft(2, '0')}-${bill.dueDate!.day.toString().padLeft(2, '0')}'
                               : 'Not available',
                         ),
-                        const Divider(height: AppConstants.paddingLarge),
-                        _buildDetailRow(context, 'Status', bill.status),
-                        const Divider(height: AppConstants.paddingLarge),
-                        _buildDetailRow(
-                          context, 
-                          'Amount Due', 
-                          MoneyUtils.formatAmount(bill.amountDue, currency: bill.currency),
-                          isTotal: true,
-                        ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: AppConstants.paddingLarge * 2),
-                if (bill.status == 'UNPAID')
-                  PrimaryButton(
-                    label: 'Continue to Payment',
-                    onPressed: () {
-                      context.push('/payment-confirmation', extra: bill);
-                    },
-                  ),
               ],
             ),
           );
@@ -88,29 +133,72 @@ class BillDetailsScreen extends ConsumerWidget {
           );
         },
       ),
+      bottomNavigationBar: billAsync.maybeWhen(
+        data: (bill) => bill != null && bill.status == 'UNPAID'
+            ? _buildPaymentAction(context, bill)
+            : null,
+        orElse: () => null,
+      ),
     );
   }
 
-  Widget _buildDetailRow(BuildContext context, String label, String value, {bool isTotal = false}) {
+  Widget _buildPaymentAction(BuildContext context, Bill bill) {
+    final semantic = AppSemanticColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(top: BorderSide(color: semantic.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.all(AppConstants.spacingLarge),
+        child: PrimaryButton(
+          key: const Key('bill_details_payment_button'),
+          label: 'Continue to Payment',
+          onPressed: () {
+            context.push('/payment-confirmation', extra: bill);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(
+    BuildContext context,
+    String label,
+    String value, {
+    Key? valueKey,
+  }) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Colors.grey[600],
-            fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+        SizedBox(
+          width: 96,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-            fontSize: isTotal ? 20 : null,
-            color: isTotal ? Theme.of(context).colorScheme.primary : null,
+        const SizedBox(width: AppConstants.spacingMedium),
+        Expanded(
+          child: Text(
+            value,
+            key: valueKey,
+            textAlign: TextAlign.end,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ),
       ],
     );
+  }
+
+  String _maskedAccount(String accountNumber) {
+    final trimmed = accountNumber.trim();
+    if (trimmed.isEmpty || trimmed.length <= 4) return '••••';
+    return '•••• ${trimmed.substring(trimmed.length - 4)}';
   }
 }

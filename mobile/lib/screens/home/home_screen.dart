@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../../widgets/bill_card.dart';
 import '../../widgets/state_views.dart';
-import '../../widgets/primary_button.dart';
 import '../../core/errors/app_errors.dart';
 import '../../repositories/providers.dart';
 
@@ -22,12 +22,6 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppConstants.appName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -42,14 +36,18 @@ class HomeScreen extends ConsumerWidget {
               _buildGreeting(context, userName),
               const SizedBox(height: AppConstants.paddingMedium),
               _buildAssistantBanner(context),
-              const SizedBox(height: AppConstants.paddingLarge),
-              _buildQuickActions(context),
-              const SizedBox(height: AppConstants.paddingLarge),
+              const SizedBox(height: AppConstants.spacingXLarge),
               Text(
-                'Upcoming Bills',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                'Quick actions',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
-              const SizedBox(height: AppConstants.paddingMedium),
+              const SizedBox(height: AppConstants.spacingMedium),
+              _buildQuickActions(context),
+              const SizedBox(height: AppConstants.spacingXLarge),
+              _buildSectionHeader(context),
+              const SizedBox(height: AppConstants.spacingMedium),
               _buildUpcomingBills(billsAsync, context, ref),
             ],
           ),
@@ -63,13 +61,17 @@ class HomeScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Good morning, $name',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          'Welcome back, $name',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
         ),
         const SizedBox(height: AppConstants.paddingSmall),
         Text(
           'How can I help with your bills today?',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         ),
       ],
     );
@@ -77,59 +79,65 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildAssistantBanner(BuildContext context) {
     final theme = Theme.of(context);
+    final semantic = AppSemanticColors.of(context);
     return InkWell(
       key: const Key('ask_billing_agent_card'),
       onTap: () => context.push('/assistant'),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppConstants.spacingXLarge),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              theme.primaryColor.withOpacity(0.08),
-              theme.primaryColor.withOpacity(0.02),
+              theme.colorScheme.primaryContainer,
+              theme.colorScheme.secondaryContainer.withOpacity(0.72),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.primaryColor.withOpacity(0.2),
-          ),
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          border: Border.all(color: semantic.border),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: theme.primaryColor,
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius:
+                        BorderRadius.circular(AppConstants.radiusMedium),
+                  ),
+                  child: Icon(
+                    Icons.auto_awesome_rounded,
+                    color: theme.colorScheme.onPrimary,
+                    size: AppConstants.iconMedium,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Ask Billing Agent',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Pay bills or check balances using natural language',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: AppConstants.spacingLarge),
+            Text(
+              'Ask Billing Agent',
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: theme.primaryColor,
+            const SizedBox(height: AppConstants.spacingXSmall),
+            Text(
+              'Review bills and prepare a payment using natural language. You stay in control of confirmation.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
           ],
         ),
@@ -138,38 +146,87 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Widget _buildQuickActions(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final payBill = OutlinedButton.icon(
+          onPressed: () => context.go('/bills'),
+          icon: const Icon(Icons.receipt_long_outlined),
+          label: const Text('Pay a Bill'),
+        );
+        final history = OutlinedButton.icon(
+          onPressed: () => context.go('/transactions'),
+          icon: const Icon(Icons.history_rounded),
+          label: const Text('View History'),
+        );
+
+        if (constraints.maxWidth < 340) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              payBill,
+              const SizedBox(height: AppConstants.spacingSmall),
+              history,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: payBill),
+            const SizedBox(width: AppConstants.spacingMedium),
+            Expanded(child: history),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: PrimaryButton(
-            label: 'Pay a Bill',
-            onPressed: () => context.go('/bills'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Upcoming bills',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              Text(
+                'Unpaid bills requiring attention',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: AppConstants.paddingMedium),
-        Expanded(
-          child: OutlinedButton(
-            onPressed: () => context.go('/transactions'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('View History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
+        TextButton(
+          key: const Key('home_view_all_bills'),
+          onPressed: () => context.go('/bills'),
+          child: const Text('View all'),
         ),
       ],
     );
   }
 
-  Widget _buildUpcomingBills(AsyncValue billsAsync, BuildContext context, WidgetRef ref) {
+  Widget _buildUpcomingBills(
+    AsyncValue billsAsync,
+    BuildContext context,
+    WidgetRef ref,
+  ) {
     return billsAsync.when(
       data: (bills) {
         final unpaidBills = bills.where((b) => b.status == 'UNPAID').toList();
         if (unpaidBills.isEmpty) {
-          return const EmptyStateView(message: 'You have no upcoming bills.', icon: Icons.check_circle_outline);
+          return const EmptyStateView(
+            message: 'You have no upcoming bills.',
+            icon: Icons.check_circle_outline,
+          );
         }
         return Column(
-          children: unpaidBills.take(2).map<Widget>((b) => BillCard(bill: b)).toList(),
+          children: unpaidBills
+              .take(2)
+              .map<Widget>((b) => BillCard(bill: b))
+              .toList(),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

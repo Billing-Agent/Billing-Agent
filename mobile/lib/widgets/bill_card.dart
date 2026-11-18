@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/bill.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import 'package:go_router/go_router.dart';
 import 'amount_text.dart';
 import 'status_chip.dart';
@@ -12,57 +13,90 @@ class BillCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantic = AppSemanticColors.of(context);
+
     return Card(
       margin: const EdgeInsets.only(bottom: AppConstants.paddingMedium),
       child: InkWell(
         onTap: () {
           context.push('/bills/${bill.id}', extra: bill);
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
         child: Padding(
-          padding: const EdgeInsets.all(AppConstants.paddingMedium),
+          padding: const EdgeInsets.all(AppConstants.spacingLarge),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius:
+                          BorderRadius.circular(AppConstants.radiusMedium),
+                    ),
+                    child: Icon(
+                      Icons.receipt_long_outlined,
+                      color: theme.colorScheme.onPrimaryContainer,
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingMedium),
                   Expanded(
-                    child: Text(
-                      bill.biller,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          bill.biller,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
                           ),
+                        ),
+                        const SizedBox(height: AppConstants.spacingXSmall),
+                        Text(
+                          'Account ${_maskedAccount(bill.accountNumber)}',
+                          key: const Key('bill_card_masked_account'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: AppConstants.spacingSmall),
                   StatusChip(status: bill.status),
                 ],
               ),
-              const SizedBox(height: AppConstants.paddingSmall),
-              Text(
-                'Acc: ****${bill.accountNumber.length > 4 ? bill.accountNumber.substring(bill.accountNumber.length - 4) : bill.accountNumber}',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: AppConstants.paddingMedium),
+              const SizedBox(height: AppConstants.spacingLarge),
+              Divider(color: semantic.border, height: 1),
+              const SizedBox(height: AppConstants.spacingLarge),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Due Date',
-                          style: Theme.of(context).textTheme.bodySmall,
+                          'Due date',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
+                        const SizedBox(height: AppConstants.spacingXSmall),
                         Text(
                           bill.dueDate != null
                               ? '${bill.dueDate!.year}-${bill.dueDate!.month.toString().padLeft(2, '0')}-${bill.dueDate!.day.toString().padLeft(2, '0')}'
                               : 'Not available',
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -74,7 +108,7 @@ class BillCard extends StatelessWidget {
                       currency: bill.currency,
                       textAlign: TextAlign.end,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
+                            color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w700,
                           ),
                     ),
@@ -86,5 +120,11 @@ class BillCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _maskedAccount(String accountNumber) {
+    final trimmed = accountNumber.trim();
+    if (trimmed.isEmpty || trimmed.length <= 4) return '••••';
+    return '•••• ${trimmed.substring(trimmed.length - 4)}';
   }
 }

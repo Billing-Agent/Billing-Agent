@@ -47,30 +47,32 @@ void main() {
   // Create a mock API client that returns dummy bills
   final mockClient = MockClient((request) async {
     if (request.url.path.contains('/bills')) {
-      return http.Response(jsonEncode([
-        {
-          'id': '0000-0000-0000-0001',
-          'biller': 'CEB',
-          'account_number': '123456789',
-          'amount_due': '1500.00',
-          'currency': 'LKR',
-          'status': 'UNPAID',
-          'due_date': '2023-12-31T00:00:00Z',
-          'created_at': '2023-01-01T00:00:00Z',
-          'updated_at': '2023-01-01T00:00:00Z',
-        },
-        {
-          'id': '0000-0000-0000-0002',
-          'biller': 'WATER',
-          'account_number': '987654321',
-          'amount_due': '800.00',
-          'currency': 'LKR',
-          'status': 'UNPAID',
-          'due_date': '2023-12-31T00:00:00Z',
-          'created_at': '2023-01-01T00:00:00Z',
-          'updated_at': '2023-01-01T00:00:00Z',
-        }
-      ]), 200);
+      return http.Response(
+          jsonEncode([
+            {
+              'id': '0000-0000-0000-0001',
+              'biller': 'CEB',
+              'account_number': '123456789',
+              'amount_due': '1500.00',
+              'currency': 'LKR',
+              'status': 'UNPAID',
+              'due_date': '2023-12-31T00:00:00Z',
+              'created_at': '2023-01-01T00:00:00Z',
+              'updated_at': '2023-01-01T00:00:00Z',
+            },
+            {
+              'id': '0000-0000-0000-0002',
+              'biller': 'WATER',
+              'account_number': '987654321',
+              'amount_due': '800.00',
+              'currency': 'LKR',
+              'status': 'UNPAID',
+              'due_date': '2023-12-31T00:00:00Z',
+              'created_at': '2023-01-01T00:00:00Z',
+              'updated_at': '2023-01-01T00:00:00Z',
+            }
+          ]),
+          200);
     }
 
     return http.Response('Not Found', 404);
@@ -78,12 +80,14 @@ void main() {
 
   final mockApiClient = ApiClient(client: mockClient);
 
-  testWidgets('App starts successfully and renders Home screen', (WidgetTester tester) async {
+  testWidgets('App starts successfully and renders Home screen',
+      (WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(mockApiClient),
-          authProvider.overrideWith((ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
+          authProvider.overrideWith(
+              (ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
         ],
         child: const BillingAgentApp(),
       ),
@@ -92,19 +96,26 @@ void main() {
 
     // Verify that the home screen is displayed
     expect(find.text('Billing Agent'), findsOneWidget);
-    expect(find.text('Good morning, Dev User'), findsOneWidget);
-    expect(find.text('Upcoming Bills'), findsOneWidget);
-    
+    expect(find.text('Welcome back, Dev User'), findsOneWidget);
+    expect(find.text('Upcoming bills'), findsOneWidget);
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Bills'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+
     // Look for CEB bill in upcoming bills
     expect(find.text('CEB'), findsWidgets);
   });
 
-  testWidgets('Bottom navigation works and renders Bills screen', (WidgetTester tester) async {
+  testWidgets('Bottom navigation works and renders Bills screen',
+      (WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(mockApiClient),
-          authProvider.overrideWith((ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
+          authProvider.overrideWith(
+              (ref) => MockAuthNotifier(AuthState.authenticated(testUser))),
         ],
         child: const BillingAgentApp(),
       ),
@@ -117,13 +128,14 @@ void main() {
 
     // Verify Bills screen
     expect(find.text('My Bills'), findsOneWidget);
-    
+
     // Look for both CEB and WATER bills
     expect(find.text('CEB'), findsWidgets);
     expect(find.text('WATER'), findsWidgets);
   });
 
-  testWidgets('Empty state view renders correctly', (WidgetTester tester) async {
+  testWidgets('Empty state view renders correctly',
+      (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(

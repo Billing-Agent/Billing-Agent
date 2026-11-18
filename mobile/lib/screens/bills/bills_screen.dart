@@ -20,7 +20,22 @@ class BillsScreen extends ConsumerWidget {
       body: billsAsync.when(
         data: (bills) {
           if (bills.isEmpty) {
-            return const EmptyStateView(message: 'You have no bills.');
+            return RefreshIndicator(
+              onRefresh: () async => ref.invalidate(userBillsProvider),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: MediaQuery.sizeOf(context).height * 0.62,
+                    child: EmptyStateView(
+                      message: 'You have no bills.',
+                      actionLabel: 'Refresh',
+                      onAction: () => ref.invalidate(userBillsProvider),
+                    ),
+                  ),
+                ],
+              ),
+            );
           }
           return RefreshIndicator(
             onRefresh: () async {
@@ -28,9 +43,35 @@ class BillsScreen extends ConsumerWidget {
             },
             child: ListView.builder(
               padding: const EdgeInsets.all(AppConstants.paddingMedium),
-              itemCount: bills.length,
+              itemCount: bills.length + 1,
               itemBuilder: (context, index) {
-                return BillCard(bill: bills[index]);
+                if (index == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(
+                      bottom: AppConstants.spacingLarge,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${bills.length} ${bills.length == 1 ? 'bill' : 'bills'}',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: AppConstants.spacingXSmall),
+                        Text(
+                          'Review amounts, due dates and payment status.',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return BillCard(bill: bills[index - 1]);
               },
             ),
           );
